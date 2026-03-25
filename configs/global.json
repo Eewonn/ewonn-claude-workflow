@@ -26,7 +26,7 @@
   "connector_failure_policy": {
     "auto_retry": false,
     "critical_connectors_by_phase": {
-      "research": [],
+      "research": ["filesystem"],
       "plan": ["filesystem"],
       "implement": ["filesystem", "git"],
       "validate": ["filesystem"]

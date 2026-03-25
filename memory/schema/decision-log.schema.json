@@ -25,11 +25,14 @@
           "status": { "type": "string", "enum": ["open", "resolved", "deferred"] },
           "risk_level": { "type": "string", "enum": ["high", "medium", "low"] },
           "created_at": { "type": "string", "format": "date-time" },
-          "resolved_at": {
-            "type": "string",
-            "format": "date-time",
-            "description": "Required when status=resolved — enforced at the code level in store.ts"
-          }
+          "resolved_at": { "type": "string", "format": "date-time" }
+        },
+        "if": {
+          "properties": { "status": { "const": "resolved" } },
+          "required": ["status"]
+        },
+        "then": {
+          "required": ["resolved_at"]
         }
       }
     }

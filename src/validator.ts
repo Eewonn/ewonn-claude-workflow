@@ -16,7 +16,7 @@ import addFormats from 'ajv-formats';
 import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import type { ValidationResult, AjvError } from './types.js';
 
 const SCHEMA_NAMES = [
@@ -71,11 +71,6 @@ export function createValidator(schemaDir: string): AjvValidator {
 
   return { validate, validateFile };
 }
-
-// ---------------------------------------------------------------------------
-// Synchronous file reader (used during validator initialization only)
-// ---------------------------------------------------------------------------
-import { readFileSync } from 'node:fs';
 
 // ---------------------------------------------------------------------------
 // CLI entry point

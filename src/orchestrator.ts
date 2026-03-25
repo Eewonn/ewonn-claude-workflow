@@ -13,7 +13,7 @@
  *   finalize   --status <completed|failed> [--run-dir <dir>]
  */
 
-import { readFile, writeFile, mkdir, cp, rename, symlink, unlink } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, cp, rename, rm, symlink, unlink } from 'node:fs/promises';
 import { existsSync, readdirSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -92,11 +92,16 @@ export async function snapshotPhase(runDir: string, phase: Phase): Promise<void>
     }
   }
 
-  // Atomic rename: remove old snapshot dir if present, then rename tmp → final
+  // Atomic rename: back up old snapshot, rename tmp → final, then remove backup
+  const bakDir = `${snapshotFinal}.bak`;
   if (existsSync(snapshotFinal)) {
-    await cp(snapshotFinal, `${snapshotFinal}.bak`, { recursive: true });
+    await cp(snapshotFinal, bakDir, { recursive: true });
   }
   await rename(snapshotTmp, snapshotFinal);
+  // Clean up backup after successful rename so they don't accumulate
+  if (existsSync(bakDir)) {
+    await rm(bakDir, { recursive: true });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -280,10 +285,17 @@ async function cmdCheckpoint(args: Record<string, string>): Promise<void> {
 
   if (approved) {
     if (nextPhase === null && state.current_phase === 'validate') {
-      // All phases done — auto-finalize
+      // All phases done — mark validate complete and auto-finalize
+      if (state.current_phase && !state.phases_completed.includes(state.current_phase)) {
+        state.phases_completed.push(state.current_phase);
+      }
       state.status = 'completed';
       console.log('CHECKPOINT: approved — all phases complete, run finalized');
     } else if (nextPhase) {
+      // Mark current phase complete before advancing
+      if (state.current_phase && !state.phases_completed.includes(state.current_phase)) {
+        state.phases_completed.push(state.current_phase);
+      }
       state.current_phase = nextPhase;
       state.status = 'running';
       // Reset phase token counter on new phase
@@ -415,10 +427,11 @@ async function cmdCompress(args: Record<string, string>): Promise<void> {
     : [];
 
   if (microSummaries.length === 0) {
-    console.error(
-      `COMPRESS ERROR: micro-summary not found for phase "${phase}".\n` +
-        `  Generate a micro-summary first, save it as micro-summary-${phase}-<timestamp>.md in ${runDir}, then re-run compress.`,
-    );
+    const example = `micro-summary-${phase}-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.md`;
+    console.error(`COMPRESS ERROR: No micro-summary found for phase "${phase}".`);
+    console.error(`  Before running compress, write a micro-summary file to:`);
+    console.error(`    ${runDir}/${example}`);
+    console.error(`  The micro-summary should capture: key findings, active decisions, open risks, current task scope.`);
     process.exit(1);
   }
 
@@ -495,6 +508,85 @@ async function cmdFinalize(args: Record<string, string>): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Command: list
+// ---------------------------------------------------------------------------
+
+async function cmdList(_args: Record<string, string>): Promise<void> {
+  const cfg = await loadGlobalConfig();
+  const runsDir = join(PROJECT_ROOT, cfg.runs_dir);
+
+  if (!existsSync(runsDir)) {
+    console.log('No runs directory found.');
+    return;
+  }
+
+  const entries = readdirSync(runsDir, { withFileTypes: true });
+  const runDirs = entries
+    .filter((e) => e.isDirectory() && /^\d{8}-\d{6}-[0-9a-f]{6}$/.test(e.name))
+    .map((e) => e.name)
+    .sort()
+    .reverse(); // newest first
+
+  if (runDirs.length === 0) {
+    console.log('No runs found. Start one with: npx tsx src/orchestrator.ts init --profile balanced');
+    return;
+  }
+
+  console.log('\n── Runs ──────────────────────────────────────────────────────────────');
+  console.log('  RUN ID                    PROFILE    STATUS               PHASES');
+  console.log('  ───────────────────────────────────────────────────────────────────');
+
+  for (const runId of runDirs) {
+    const statePath = join(runsDir, runId, 'run-state.json');
+    if (!existsSync(statePath)) continue;
+    try {
+      const state = await readArtifact<RunState>(statePath);
+      const phases = state.phases_completed.length > 0
+        ? `[${state.phases_completed.join(', ')}]`
+        : '(none)';
+      const profile = state.profile.padEnd(10);
+      const status = state.status.padEnd(20);
+      console.log(`  ${runId}  ${profile} ${status} ${phases}`);
+    } catch {
+      console.log(`  ${runId}  (unreadable — run-state.json may be corrupt)`);
+    }
+  }
+  console.log('─────────────────────────────────────────────────────────────────────\n');
+}
+
+// ---------------------------------------------------------------------------
+// Command: abort
+// ---------------------------------------------------------------------------
+
+async function cmdAbort(args: Record<string, string>): Promise<void> {
+  const reason = args['reason'] ?? 'user aborted';
+  const runDir = await resolveRunDir(args['run-dir']);
+  const statePath = join(runDir, 'run-state.json');
+  const state = await readArtifact<RunState>(statePath);
+  const now = new Date().toISOString();
+
+  const terminalStatuses = ['completed', 'failed'];
+  if (terminalStatuses.includes(state.status)) {
+    throw new Error(`Cannot abort: run "${state.run_id}" is already ${state.status}.`);
+  }
+
+  state.status = 'failed';
+  state.updated_at = now;
+  state.rollback_metadata = {
+    reason: `aborted: ${reason}`,
+    failed_step: `aborted at phase ${state.current_phase ?? '(none)'}`,
+    restored_at: now,
+  };
+  await writeArtifact(statePath, 'run-state', state);
+
+  console.log(`\nABORT: run ${state.run_id} → failed`);
+  console.log(`  Phase at abort: ${state.current_phase ?? '(none)'}`);
+  console.log(`  Reason:         ${reason}`);
+  console.log('  Run data preserved. Start fresh with: npx tsx src/orchestrator.ts init');
+  console.log('');
+}
+
+// ---------------------------------------------------------------------------
 // CLI argument parser
 // ---------------------------------------------------------------------------
 
@@ -527,7 +619,7 @@ async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   if (argv.length === 0) {
     console.error('Usage: npx tsx src/orchestrator.ts <command> [options]');
-    console.error('Commands: init, status, transition, checkpoint, rollback, compress, finalize');
+    console.error('Commands: init, status, list, transition, checkpoint, rollback, compress, finalize, abort');
     process.exit(2);
   }
 
@@ -537,14 +629,16 @@ async function main(): Promise<void> {
     switch (command) {
       case 'init':       await cmdInit(args); break;
       case 'status':     await cmdStatus(args); break;
+      case 'list':       await cmdList(args); break;
       case 'transition': await cmdTransition(args); break;
       case 'checkpoint': await cmdCheckpoint(args); break;
       case 'rollback':   await cmdRollback(args); break;
       case 'compress':   await cmdCompress(args); break;
       case 'finalize':   await cmdFinalize(args); break;
+      case 'abort':      await cmdAbort(args); break;
       default:
         console.error(`Unknown command: ${command}`);
-        console.error('Valid commands: init, status, transition, checkpoint, rollback, compress, finalize');
+        console.error('Valid commands: init, status, list, transition, checkpoint, rollback, compress, finalize, abort');
         process.exit(2);
     }
   } catch (err) {
