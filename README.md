@@ -155,6 +155,28 @@ Produces two files in `eval/`:
 
 ---
 
+### `/workflow list`
+
+List all runs with their profile, status, and completed phases.
+
+```
+/workflow list
+```
+
+---
+
+### `/workflow abort [--reason "<text>"]`
+
+Cancel an in-progress run immediately without going through the full checkpoint flow. Sets the run to `failed` and preserves all data for inspection.
+
+```
+/workflow abort --reason "task changed direction"
+```
+
+Use this when you want to abandon a run mid-flight. Start fresh afterward with `/workflow start`.
+
+---
+
 ### `/workflow weekly-synthesis`
 
 Aggregates all unprocessed retrospectives in `eval/` into a weekly synthesis report.
@@ -189,6 +211,12 @@ npx tsx src/orchestrator.ts rollback --reason "plan was incomplete"
 
 # Record compression event (micro-summary must exist first)
 npx tsx src/orchestrator.ts compress --phase research --tokens-used 48000
+
+# List all runs
+npx tsx src/orchestrator.ts list
+
+# Cancel an in-progress run
+npx tsx src/orchestrator.ts abort --reason "task changed"
 
 # Finalize a run
 npx tsx src/orchestrator.ts finalize --status completed
@@ -321,7 +349,7 @@ Connector scope by phase:
 
 | Phase | Connectors | All critical? |
 |---|---|---|
-| Research | filesystem, git, github, context7, google-stitch | None — all best-effort |
+| Research | filesystem, git, github, context7, google-stitch | filesystem critical |
 | Plan | filesystem | Yes (filesystem critical) |
 | Implement | filesystem, git, github | filesystem and git critical |
 | Validate | filesystem, git, github | filesystem critical |
@@ -381,7 +409,7 @@ The weekly synthesis compares profile outcomes, clusters recurring blockers, tra
 ```
 src/
   types.ts              Shared TypeScript interfaces and union types
-  orchestrator.ts       State machine CLI (7 commands)
+  orchestrator.ts       State machine CLI (9 commands)
   validator.ts          AJV schema validator CLI + module
   token-budget.ts       Token threshold utilities
   index.ts              Help output
