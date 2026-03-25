@@ -1,12 +1,15 @@
 # ewonn-claude-workflow
 
-A hybrid AI workflow orchestration system for Claude Code that enforces a structured pipeline on complex multi-step tasks.
+A hybrid AI workflow orchestration system for Claude Code. Scales from zero-ceremony quick fixes to a full structured pipeline for complex tasks.
 
-```
-Research → Plan → Implement → Validate
-```
+| Mode | Pipeline | Use for |
+|---|---|---|
+| `quick` | Direct implementation | Single-file fixes, quick edits |
+| `bugfix` | Implement → Validate | Known bugs, 1–3 files |
+| `lite` | Plan → Implement → Validate | Small features, clear scope |
+| `full` | Research → Plan → Implement → Validate | Multi-file features, uncertain scope |
 
-Every run has persistent memory, human approval gates between phases, automatic token budget management, and an improvement loop that generates feedback after each run.
+Every structured run has persistent memory, human approval gates between phases, automatic token budget management, and an improvement loop that generates feedback after each run.
 
 ---
 
@@ -34,13 +37,16 @@ npm install
 
 ## Quick Start
 
-Start a new workflow run from within a Claude Code session:
+From within a Claude Code session:
 
 ```
-/workflow start
+/workflow quick                    # fastest — no ceremony, no artifacts
+/workflow start --mode bugfix      # fix a known bug (Implement → Validate)
+/workflow start --mode lite        # small feature (Plan → Implement → Validate)
+/workflow start                    # full pipeline with complexity assessment
 ```
 
-Claude will initialize the run, begin the Research phase, and guide you through the pipeline. At the end of each phase, Claude presents a checkpoint summary and waits for your approval before advancing.
+Not sure which to use? Just run `/workflow start` — Claude assesses the task and recommends a lighter mode if appropriate before initializing.
 
 ---
 
@@ -50,7 +56,7 @@ Claude will initialize the run, begin the Research phase, and guide you through 
 
 | Phase | Agent | What happens |
 |---|---|---|
-| **Research** | ResearchAgent | Gathers evidence from code, git history, docs, and external sources. Documents findings with confidence levels. |
+| **Research** | ResearchAgent | Gathers evidence from code, git history, docs, and external sources. For complex tasks, spawns parallel subagents. Documents findings with confidence levels. |
 | **Plan** | PlannerAgent | Translates research into a sequenced task list with dependencies and batch assignments. |
 | **Implement** | ImplementerAgent | Executes tasks batch-by-batch, committing changes, updating task state after each batch. |
 | **Validate** | ValidatorAgent | Checks the implementation against the plan using the active profile. Produces a verdict. |
@@ -83,18 +89,36 @@ The Validate phase produces one of three verdicts:
 
 Invoke these from a Claude Code session.
 
-### `/workflow start [--profile <p>] [--run-id <id>]`
+### `/workflow quick`
 
-Starts a new run. Creates the run directory, initializes all memory artifacts, and begins the Research phase.
+Zero-ceremony mode. No orchestrator CLI, no JSON artifacts, no checkpoint gates.
 
-- `--profile`: `strict`, `balanced` (default), or `fast`
+1. Ask for the task (if not already described)
+2. Read only the relevant files
+3. Make the changes
+4. Summarize in 3–5 bullets
+
+If scope expands beyond 3 files mid-task, Claude pauses and suggests `/workflow start` instead.
+
+---
+
+### `/workflow start [--profile <p>] [--run-id <id>] [--mode <mode>]`
+
+Starts a new structured run.
+
+- `--mode`: `bugfix` (Implement→Validate), `lite` (Plan→Implement→Validate), or omit for full pipeline
+- `--profile`: `strict`, `balanced` (default), or `fast` — ignored for bugfix/lite (uses `micro` profile)
 - `--run-id`: optional; auto-generated as `YYYYMMDD-HHmmss-{6hex}` if omitted
 
-**What Claude does:**
-1. Runs `npx tsx src/orchestrator.ts init --profile <p>`
-2. Reads `agents/research-agent.md` and `templates/research-prompt.md`
-3. Executes the Research phase
-4. Calls `/workflow transition --to plan` when research is complete
+**Without `--mode` (full pipeline):**
+1. Assesses task complexity and recommends mode — user confirms before init
+2. Runs `npx tsx src/orchestrator.ts init --profile <p>`
+3. Executes the Research phase — uses **parallel subagents** for tasks spanning ≥ 2 subsystems
+4. Transitions through Plan → Implement → Validate
+
+**With `--mode bugfix`:** Skips Research and Plan. Init with `micro` profile → Implement → Validate.
+
+**With `--mode lite`:** Skips Research. Init with `micro` profile → Plan (max 5 tasks) → Implement → Validate.
 
 ---
 
@@ -259,20 +283,21 @@ npx tsx src/validator.ts <schema-name> <file-path>
 
 Select a profile at run start: `/workflow start --profile strict`
 
-| | strict | balanced (default) | fast |
-|---|---|---|---|
-| Pass with open risks | No | Yes (≤3 risks) | Yes (≤10 risks) |
-| All checks required | Yes | Yes | No |
-| Max unresolved decisions | 0 | 2 | 5 |
-| Phase token max | 80k | 80k | 40k |
-| Batch size factor | 1.0× | 1.0× | 1.5× |
-| Remote connectors | All | All | Filesystem only |
+| | strict | balanced (default) | fast | micro |
+|---|---|---|---|---|
+| Pass with open risks | No | Yes (≤3 risks) | Yes (≤10 risks) | Yes (≤5 risks) |
+| All checks required | Yes | Yes | No | No |
+| Max unresolved decisions | 0 | 2 | 5 | 3 |
+| Phase token max | 80k | 80k | 40k | 15k |
+| Batch size factor | 1.0× | 1.0× | 1.5× | 2.0× |
+| Connectors | All | All | Filesystem only | Filesystem only |
 
 **When to use each:**
 
 - `strict` — production changes, anything requiring zero open issues at handoff
 - `balanced` — normal development work, the safe default
 - `fast` — quick explorations, prototypes, or when you need rapid iteration and will accept documented risks
+- `micro` — set automatically by `--mode bugfix` and `--mode lite`; not selected manually
 
 ---
 
@@ -286,12 +311,13 @@ Token usage is tracked per-phase and per-run. Thresholds:
 | compress | 60% | Generate micro-summary → compress → trim context |
 | emergency | 80% | Stop phase, request human checkpoint before continuing |
 
-**Default limits** (balanced/strict profiles):
-- Per-phase: 80,000 tokens
-- Per-run: 320,000 tokens
+**Limits by profile:**
 
-**Fast profile limits:**
-- Per-phase: 40,000 tokens (same run_max)
+| Profile | Phase max | Run max |
+|---|---|---|
+| strict / balanced | 80,000 | 320,000 |
+| fast | 40,000 | 320,000 |
+| micro (bugfix/lite) | 15,000 | 320,000 |
 
 Token counts in the retrieval index use a character/4 heuristic. Claude's actual consumption may differ slightly.
 
@@ -427,11 +453,12 @@ configs/
     strict.json
     balanced.json
     fast.json
+    micro.json          For bugfix and lite modes
 
 agents/                 5 agent contract .md files
 templates/              5 prompt template .md files
 skills/
-  workflow.md           Main Claude Code skill (8 subcommands)
+  workflow.md           Main Claude Code skill (quick, start, transition, status, list, compress, checkpoint, validate, abort, retrospective, weekly-synthesis)
 
 runs/                   Per-run artifact directories (created at runtime)
 eval/                   Retrospectives and weekly synthesis outputs
@@ -455,3 +482,6 @@ If a rollback occurs after a partial snapshot write, restoring from a corrupt sn
 
 **Why not store token counts in Claude's actual token counter?**
 The TypeScript CLIs have no access to Claude's internal token counter. The retrieval index uses a character/4 heuristic for planning purposes. Actual budget enforcement relies on Claude self-monitoring, with the CLI providing tracking assistance and triggering compress/emergency actions.
+
+**Why multiple workflow modes instead of just one?**
+The full pipeline adds real overhead — orchestrator init, JSON schema validation, checkpoint gates, retrieval indexing. For a one-file bug fix that takes 5 minutes, that ceremony costs more than it saves. `quick` is stateless and instant. `bugfix` and `lite` use the structured artifacts (for rollback and history) but skip phases that add no value for small tasks. The full pipeline is reserved for work where losing context or going off-track actually has a cost.

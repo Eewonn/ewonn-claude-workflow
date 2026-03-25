@@ -4,24 +4,30 @@ A practical guide to using this system in your daily work.
 
 ---
 
-## When to use this
+## Picking the right command
 
-Use `/workflow start` when a task is complex enough that you'd normally worry about Claude losing context, going off-track, or making changes that are hard to review. Good fits:
+This is the most important decision. Match the command to the task size:
 
-- **Building a new feature** (multi-file, touches auth/DB/UI)
-- **Refactoring a module** (many changes that need to be consistent)
-- **Debugging a hard problem** (need to research before touching code)
-- **Adding a new integration** (new API, new service, new library)
+| Task | Command |
+|---|---|
+| Single-file fix, typo, quick edit | `/workflow quick` |
+| Known bug, 1–3 files, cause already clear | `/workflow start --mode bugfix` |
+| Small feature, 1–5 files, scope is clear | `/workflow start --mode lite` |
+| Multi-file feature, uncertain scope | `/workflow start` |
+| Large feature, production change | `/workflow start --profile strict` |
 
-Skip it for: quick one-file fixes, typo corrections, single-function changes.
+If you're unsure, just run `/workflow start` — Claude will assess the task and recommend a lighter mode if appropriate.
 
 ---
 
 ## Quick reference
 
 ```
-/workflow start                         Start a new run (balanced profile)
-/workflow start --profile fast          Start with fast profile
+/workflow quick                         Zero-ceremony: read → implement → summarize
+/workflow start                         Full pipeline (balanced profile)
+/workflow start --mode bugfix           Implement → Validate only (known bugs)
+/workflow start --mode lite             Plan → Implement → Validate (small features)
+/workflow start --profile fast          Full pipeline, lower token limits
 /workflow status                        Show current run state
 /workflow list                          Show all past runs
 /workflow abort --reason "..."          Cancel in-progress run
@@ -38,7 +44,21 @@ DENY: <your reason>
 
 ---
 
+## /workflow quick — for simple tasks
 
+The fastest path. No phases, no checkpoints, no JSON artifacts.
+
+```
+/workflow quick
+```
+
+Claude will ask what the task is, read the relevant files, make the change, and give you a 3–5 bullet summary. That's it.
+
+**Good for:** single-file fixes, renaming things, adding a prop, fixing a typo, quick explorations.
+
+**Not for:** anything touching auth, database schema, or 3+ files — Claude will tell you to upgrade if it hits that mid-task.
+
+---
 
 ## Step-by-step: A full run
 
@@ -52,13 +72,7 @@ Navigate to the project you want to work on. This system works from any project 
 /workflow start
 ```
 
-Or with a specific profile:
-
-```
-/workflow start --profile fast
-```
-
-Claude will ask you what the task is (the "task scope"). Describe it clearly — this is what the Research phase uses to focus its investigation.
+Claude will ask what the task is, then assess complexity before initializing. If it looks like a bugfix or small feature, it will say so and let you confirm or override.
 
 **Example task scopes that work well:**
 > "Add email verification to the signup flow — users should receive a confirmation email and can't log in until verified"
@@ -69,9 +83,9 @@ Claude will ask you what the task is (the "task scope"). Describe it clearly —
 
 ### 3. Let Research run
 
-Claude investigates the codebase, reads relevant files, checks git history, and consults docs. It documents what it finds with confidence levels (`high / medium / low`).
+Claude investigates the codebase, reads relevant files, checks git history, and consults docs. For complex tasks touching multiple subsystems, it may spawn parallel subagents to speed this up — you'll see them finish before it continues.
 
-You don't need to do anything during this phase. If Claude gets stuck or asks a question, answer it.
+It documents findings with confidence levels (`high / medium / low`). You don't need to do anything. If Claude asks a question, answer it.
 
 When research is done, Claude will present a **checkpoint**.
 
@@ -118,6 +132,8 @@ Type your response in plain English. The `APPROVE:` / `DENY:` prefix is what tri
 
 ## Picking a profile
 
+Profiles only matter for the full pipeline (`/workflow start`). Bugfix and lite modes use the `micro` profile automatically.
+
 ```
 /workflow start --profile <strict|balanced|fast>
 ```
@@ -126,13 +142,44 @@ Type your response in plain English. The `APPROVE:` / `DENY:` prefix is what tri
 |-------------|------------------------------------------------------------------------------------------------------------------------|
 |  `balanced` | Almost everything. The default.                                                                                        |
 |  `strict`   | Production deployments, security changes, anything that must ship clean. Zero open risks allowed at the end.           |
-|  `fast`     | Prototyping, exploration, "I just want to see if this approach works." Lower token limits, skips some checks.          |
+|  `fast`     | Prototyping, "I just want to see if this approach works." Lower token limits, skips some checks.                       |
+|  `micro`    | Used automatically by `--mode bugfix` and `--mode lite`. Not set manually.                                             |
 
 You can't change the profile mid-run. If you need to switch, abort and restart.
 
 ---
 
 ## Common scenarios
+
+### "I just want a quick fix"
+
+```
+/workflow quick
+```
+
+Tell Claude what to fix. It reads, changes, summarizes. No checkpoints, no ceremony.
+
+---
+
+### "I know the bug, I just need it fixed"
+
+```
+/workflow start --mode bugfix
+```
+
+Describe the bug. Claude skips Research and Plan, goes straight to implementing and validating. One checkpoint gate at the end.
+
+---
+
+### "I want to add a small feature"
+
+```
+/workflow start --mode lite
+```
+
+Claude makes a quick plan (max 5 tasks), you approve it, then it implements and validates. Two checkpoint gates total.
+
+---
 
 ### "I want to check where things are"
 
@@ -213,14 +260,27 @@ This clusters patterns across runs and suggests config/prompt improvements.
 
 |     Phase     | What Claude does                                                       | What you do                                   |
 |---------------|------------------------------------------------------------------------|-----------------------------------------------|
-| **Research**  | Reads code, git history, docs. Builds a picture of the codebase.       | Describe the task. Answer questions if asked. |
+| **Research**  | Reads code, git history, docs. May spawn parallel subagents for complex tasks. | Describe the task. Answer questions if asked. |
 | **Plan**      | Creates a sequenced task list with dependencies and batch assignments. | Review the checkpoint. Deny if the plan looks wrong. |
 | **Implement** | Executes tasks batch-by-batch. Commits after each batch.               | Review the checkpoint. Check the commits if you want. |
 | **Validate**  | Checks the implementation against the plan. Produces a verdict.        | Review the final checkpoint. Approve = run complete. |
 
+Which phases run depends on mode:
+
+| Mode | Phases |
+|---|---|
+| `quick` | None — direct implementation |
+| `bugfix` | Implement → Validate |
+| `lite` | Plan → Implement → Validate |
+| `full` | Research → Plan → Implement → Validate |
+
 ---
 
 ## NOTE
+
+**`/workflow quick` leaves no artifacts.** It's intentionally stateless — no run directory, no JSON files, no `/workflow status`. If you need a record, commit manually.
+
+**Bugfix/lite modes use a tight token budget.** The `micro` profile sets phase_max to 15k tokens. If a task turns out to be bigger than expected and you're hitting budget warnings, abort and use the full pipeline with `fast` profile instead.
 
 **Don't switch projects mid-run.** The `runs/current` symlink points to the run for the project you started from. Running `/workflow status` from a different project directory won't find it.
 
