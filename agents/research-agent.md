@@ -42,6 +42,18 @@ Performs all domain research for the current task scope. Gathers evidence from t
 - Task scope is ambiguous and cannot be clarified without human input
 - Token emergency threshold (80%) reached mid-phase
 
+## Parallel Execution
+
+For tasks spanning ≥ 2 independent subsystems, or requiring > 20 file reads, spawn parallel subagents rather than reading serially:
+
+- **Subagent A — Codebase**: reads source files, traces call paths, maps affected components. Use `subagent_type: Explore`.
+- **Subagent B — History/Context**: reads git log, recent commits, related GitHub issues/PRs. Use `subagent_type: general-purpose`.
+- **Subagent C — Docs** (if needed): queries context7 for library or framework documentation. Use `subagent_type: general-purpose`.
+
+Launch all with `run_in_background: true`. Merge findings after all complete. Set `confidence` on merged findings using the shared rubric — if subagents disagreed or provided partial evidence, downgrade to `medium`.
+
+Skip parallel for simple tasks (< 10 files, single subsystem) — the Agent tool overhead is not worth it.
+
 ## Token Budget Behavior
 
 - Monitor phase token usage against `token_policy.phase_max` (80k default, 40k on fast profile)

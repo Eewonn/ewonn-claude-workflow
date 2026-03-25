@@ -1,0 +1,18 @@
+{
+  "profile": "micro",
+  "verdict_rules": {
+    "allow_pass_with_risks": true,
+    "require_all_checks": false,
+    "max_open_risks": 5,
+    "max_unresolved_decisions": 3
+  },
+  "token_policy_overrides": {
+    "phase_max": 15000,
+    "warn_at": 0.50,
+    "compress_at": 0.70,
+    "emergency_at": 0.85
+  },
+  "batch_size_factor": 2.0,
+  "connector_scope": "local",
+  "notes": "Minimal profile for bugfix and lite workflows. phase_max=15k per phase. connector_scope=local means filesystem only — no git remote, no GitHub, no context7. No compression event — at emergency threshold, stop and checkpoint immediately."
+}

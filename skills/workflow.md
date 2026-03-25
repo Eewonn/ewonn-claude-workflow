@@ -12,20 +12,74 @@ Enforce the Research → Plan → Implement → Validate pipeline with persisten
 
 ## Subcommands
 
-### `/workflow start [--profile <p>] [--run-id <id>]`
+### `/workflow quick`
+
+Zero-ceremony mode for simple tasks. No run directory, no JSON artifacts, no checkpoint gates.
+
+**When to use:** single-file fixes, minor edits, quick explorations — anything describable in one sentence, implementable in under 15 minutes.
+
+1. Ask: "What's the task?" if not already described.
+2. Read the relevant files directly (Read, Grep, Glob as needed).
+3. Make the changes.
+4. Summarize in 3–5 bullets: what changed, why, any caveats.
+5. Offer to commit.
+
+**Escalation:** if scope expands beyond 3 files or a design decision is needed, stop and suggest `/workflow start` or `/workflow start --mode lite`.
+
+---
+
+### `/workflow start [--profile <p>] [--run-id <id>] [--mode <mode>]`
 
 Begins a new workflow run.
 
-1. Determine profile (default: `balanced`). Valid: `strict`, `balanced`, `fast`.
-2. Run:
-   ```bash
-   npx tsx src/orchestrator.ts init --profile <profile> [--run-id <id>]
-   ```
-3. Read `agents/research-agent.md` to load ResearchAgent contract.
-4. Read `templates/research-prompt.md` and fill in: `run_id`, `profile`, `task_scope` (describe the task), `prior_phase_summary: none`.
-5. Set run status to `running` in `run-state.json` (update manually or via orchestrator).
-6. Execute research phase following the ResearchAgent contract.
-7. When research is complete, run `/workflow transition --to plan`.
+**Modes:** `full` (default), `bugfix`, `lite`
+**Profiles:** `strict`, `balanced` (default), `fast` — bugfix/lite use `micro` profile
+
+#### Step 0: Complexity assessment (skip if `--mode` explicitly provided)
+
+Ask "What's the task?" then classify:
+
+| Signal | Recommendation |
+|---|---|
+| Single-file fix, no design decisions | `/workflow quick` |
+| Known bug, 1–3 files | `--mode bugfix` |
+| Small feature, 1–5 files, clear scope | `--mode lite` |
+| Multi-file, uncertain scope | Full pipeline |
+
+State recommendation and wait for user to confirm before proceeding.
+
+#### Full pipeline:
+
+1. Determine profile (default: `balanced`).
+2. Run: `npx tsx src/orchestrator.ts init --profile <profile> [--run-id <id>]`
+3. Read `agents/research-agent.md`. Read and fill `templates/research-prompt.md`.
+4. Set run status to `running`.
+5. Execute research — use **parallel subagents** for tasks spanning ≥ 2 subsystems or > 20 file reads:
+   - Subagent A (Explore): codebase reading
+   - Subagent B (general-purpose): git/GitHub context
+   - Subagent C (general-purpose, optional): context7 docs
+   - Launch with `run_in_background: true`. Merge findings after all complete.
+6. When research complete, run `/workflow transition --to plan`.
+
+#### Bugfix mode (`--mode bugfix`): Implement → Validate
+
+Profile: `micro`. No Research, no Plan.
+
+1. `npx tsx src/orchestrator.ts init --profile micro`
+2. Fix the bug. Write `phase-summary-implement.json` (files changed, root cause, fix applied).
+3. `/workflow transition --to validate`. Validate. Finalize.
+
+Memory: `run-state.json`, `phase-summary-implement.json`, `phase-summary-validate.json` only.
+
+#### Lite mode (`--mode lite`): Plan → Implement → Validate
+
+Profile: `micro`. No Research.
+
+1. `npx tsx src/orchestrator.ts init --profile micro`
+2. Write plan (max 5 tasks, must fit in one response). If it can't, upgrade to `fast` full pipeline.
+3. Implement → Validate. Two checkpoint gates.
+
+Memory: run-state, phase-summary-plan, task-state, phase-summary-implement, phase-summary-validate.
 
 ---
 
@@ -137,6 +191,28 @@ Only validate files that exist. Report any schema violations. If violations are 
 
 ---
 
+### `/workflow list`
+
+List all runs with their status.
+
+```bash
+npx tsx src/orchestrator.ts list
+```
+
+---
+
+### `/workflow abort [--reason "<text>"]`
+
+Cancel an in-progress run immediately. Sets status to `failed` and preserves all run data.
+
+```bash
+npx tsx src/orchestrator.ts abort --reason "<reason>"
+```
+
+Use when a run is stuck, the task changed, or you want to start fresh without a full finalize flow.
+
+---
+
 ### `/workflow retrospective`
 
 Generate per-run improvement artifacts after run completion.
@@ -228,7 +304,7 @@ Token estimates are approximate (character/4 heuristic in retrieval index).
 | `unknown` | Log. Treat as critical if connector is in `critical_connectors_by_phase`. |
 
 Critical connectors by phase (from `configs/global.json`):
-- Research: none (all best-effort)
+- Research: filesystem
 - Plan: filesystem
 - Implement: filesystem, git
 - Validate: filesystem

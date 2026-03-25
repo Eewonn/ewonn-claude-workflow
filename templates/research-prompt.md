@@ -13,6 +13,19 @@ Gather all evidence needed to understand the problem and inform a concrete imple
 
 Produce findings with explicit confidence levels. Document every gap where a connector failure prevented complete evidence.
 
+## Parallel Execution Strategy
+
+**Use parallel subagents** when the task spans ≥ 2 independent subsystems or requires > 20 file reads:
+
+1. Launch all subagents with `run_in_background: true`:
+   - **Subagent A** (`subagent_type: Explore`): read source files, trace call paths, map affected components
+   - **Subagent B** (`subagent_type: general-purpose`): read git log, recent commits, find related PRs/issues
+   - **Subagent C** (`subagent_type: general-purpose`, only if library docs needed): query context7 for framework APIs
+2. After all complete, merge findings into a unified set of outcomes.
+3. Where subagents disagreed or had incomplete evidence, set `confidence: medium` or lower.
+
+**Skip parallel for simple tasks** (< 10 files, single subsystem) — overhead is not worth it.
+
 ## Connector Usage (ordered by preference)
 
 1. **context7** — library/framework documentation and API references

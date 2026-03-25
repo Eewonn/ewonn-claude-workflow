@@ -627,3 +627,82 @@ Built in 8 dependency layers:
 4. Human checkpoint is required and enforced.
 5. Validation profiles operate as configured.
 6. Per-run and weekly improvement artifacts are generated.
+
+---
+
+## Implementation Status
+
+### Phases 0–8: Complete ✓
+
+All phases implemented. Key post-build fixes applied:
+
+| Fix | What changed |
+|---|---|
+| `critical_connectors_by_phase.research` | Was `[]`; changed to `["filesystem"]` — agent must read codebase |
+| `validator.ts` import ordering | `readFileSync` import moved to top of file |
+| `decision-log` schema | Added `if/then` constraint enforcing `resolved_at` when `status=resolved` |
+| Snapshot `.bak` cleanup | `snapshotPhase()` now removes the `.bak/` dir after successful rename |
+| `phases_completed` tracking | `cmdCheckpoint()` now pushes completed phase to array on approval |
+| Compress error message | Shows exact expected micro-summary file path and description |
+| `orchestrator.ts list` | New command: scans `runs/` and prints table of all runs |
+| `orchestrator.ts abort` | New command: sets `status=failed`, preserves all run data |
+| Global SKILL.md | Added `/workflow list` and `/workflow abort` subcommands |
+
+### Lightweight Workflows: Partially implemented
+
+`bugfix` and `lite` modes were documented in PLAN.md but not wired into the skill.
+
+| Item | Status |
+|---|---|
+| `micro` profile config (`configs/profiles/micro.json`) | ✓ Created |
+| `bugfix` mode (`--mode bugfix`) in skill | ✓ Implemented in SKILL.md |
+| `lite` mode (`--mode lite`) in skill | ✓ Implemented in SKILL.md |
+| `/workflow quick` (zero-ceremony) | ✓ Implemented in SKILL.md |
+
+---
+
+## v1.1 Additions
+
+Features added after v1 completion:
+
+### 1. `/workflow quick` — Zero-ceremony mode
+
+No orchestrator CLI, no JSON artifacts, no checkpoint gates. For tasks describable in one sentence.
+- Added as a new subcommand in `~/.claude/skills/workflow/SKILL.md`
+- Escalation rule: if scope expands beyond 3 files mid-task, suggest upgrading to `/workflow start`
+
+### 2. Parallel research subagents
+
+Research phase can now spawn parallel background subagents for complex tasks:
+- **Subagent A** (Explore): codebase reading
+- **Subagent B** (general-purpose): git/GitHub history and context
+- **Subagent C** (general-purpose, optional): external docs via context7
+- Added to `agents/research-agent.md` and `templates/research-prompt.md`
+- Threshold: use parallel for ≥ 2 independent subsystems or > 20 file reads; skip for < 10 files
+
+### 3. Complexity-based short-circuiting
+
+`/workflow start` now assesses task complexity before initializing:
+
+| Signal | Mode |
+|---|---|
+| Single-file fix, no design decisions | `/workflow quick` |
+| Known bug, 1–3 files | `--mode bugfix` |
+| Small feature, 1–5 files, clear scope | `--mode lite` |
+| Multi-file, uncertain scope | Full pipeline |
+
+Assessment happens before `orchestrator.ts init`. User confirms or overrides before proceeding.
+
+---
+
+## Remaining / Deferred
+
+| Item | Notes |
+|---|---|
+| Retrospective generation logic | Schema exists; generation code not yet implemented |
+| Weekly synthesis logic | Depends on retrospectives |
+| Test suite | `package.json` has placeholder; no tests written |
+| Cross-run knowledge base | Research findings not shared between runs |
+| Schema migration utility | No tooling for upgrading in-flight run artifacts |
+| Connector scope enforcement | `connector_scope: local/reduced` is guidance-only; no code enforcement |
+| Phase 9: Improvement governance | Deferred post-v1; schema scaffolded |
