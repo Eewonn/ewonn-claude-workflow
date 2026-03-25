@@ -24,21 +24,55 @@ Load `configs/profiles/{{profile}}.json` and read `verdict_rules`:
 
 ## Checklist
 
-Run the following checks, recording pass/fail for each:
+Checks are split between coordinator (you) and a delegated sub-agent. Run in this order:
 
-1. **Task completion** — all tasks in `task-state.json` are resolved (`completed` or `skipped`; no `pending` or `in_progress`)
-2. **Schema validity** — all run artifacts pass schema validation:
-   ```bash
-   npx tsx src/validator.ts run-state <run-dir>/run-state.json
-   npx tsx src/validator.ts phase-summary <run-dir>/phase-summary-research.json
-   npx tsx src/validator.ts phase-summary <run-dir>/phase-summary-plan.json
-   npx tsx src/validator.ts phase-summary <run-dir>/phase-summary-implement.json
-   npx tsx src/validator.ts task-state <run-dir>/task-state.json
-   npx tsx src/validator.ts decision-log <run-dir>/decision-log.json
-   ```
-3. **Plan coverage** — implementation outcomes in `phase-summary-implement.json` cover the tasks in `task-state.json`
-4. **Risk assessment** — all `open_risks` from prior phases are either resolved or explicitly carried forward
-5. **Decision resolution** — all `resolved` decisions in `decision-log.json` have `resolved_at` set
+### Coordinator Checks (run directly)
+
+**Check #1 — Task completion** (via Haiku micro-agent):
+```
+Agent(subagent_type: "general-purpose", model: "haiku",
+      prompt: "Count tasks by status in this JSON: [paste task-state.json content].
+               Return {total, completed, skipped, blocked, pending, in_progress}")
+```
+Pass if `pending == 0` and `in_progress == 0`.
+
+**Check #2 — Schema validity** (run CLI directly):
+```bash
+npx tsx src/validator.ts run-state <run-dir>/run-state.json
+npx tsx src/validator.ts phase-summary <run-dir>/phase-summary-research.json
+npx tsx src/validator.ts phase-summary <run-dir>/phase-summary-plan.json
+npx tsx src/validator.ts phase-summary <run-dir>/phase-summary-implement.json
+npx tsx src/validator.ts task-state <run-dir>/task-state.json
+npx tsx src/validator.ts decision-log <run-dir>/decision-log.json
+```
+
+**Check #5 — Decision resolution** (via Haiku micro-agent):
+```
+Agent(subagent_type: "general-purpose", model: "haiku",
+      prompt: "In this JSON: [paste decision-log.json content], find entries where
+               status='resolved' but resolved_at is missing or null.
+               Return {violations: [{id, description}]}")
+```
+Pass if `violations` is empty.
+
+### Delegated Checks (spawn `feature-dev:code-reviewer`)
+
+**Checks #3 + #4 — Plan coverage, code quality, risk assessment:**
+
+```
+Agent(
+  subagent_type: "feature-dev:code-reviewer",
+  prompt: "Review implementation against this plan.
+           Tasks: [paste task list from task-state.json]
+           Changed files: [list from phase-summary-implement.json outcomes]
+           Check for: (a) task coverage gaps, (b) bugs or logic errors,
+           (c) security issues, (d) quality regressions.
+           Return {coverage_gaps: [], bugs: [], security: [], quality: []}
+           Each item: {type, severity: high|medium|low, file, description}"
+)
+```
+
+Map reviewer findings → `open_risks` in the phase summary. Set `confidence: high` on findings with specific file references, `medium` for general observations.
 
 ## Verdict Decision Logic
 

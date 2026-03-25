@@ -54,11 +54,13 @@ State recommendation and wait for user to confirm before proceeding.
 2. Run: `npx tsx src/orchestrator.ts init --profile <profile> [--run-id <id>]`
 3. Read `agents/research-agent.md`. Read and fill `templates/research-prompt.md`.
 4. Set run status to `running`.
-5. Execute research — use **parallel subagents** for tasks spanning ≥ 2 subsystems or > 20 file reads:
-   - Subagent A (Explore): codebase reading
-   - Subagent B (general-purpose): git/GitHub context
-   - Subagent C (general-purpose, optional): context7 docs
-   - Launch with `run_in_background: true`. Merge findings after all complete.
+5. Execute research — always run Haiku pre-tasks first to enumerate the relevant file list, then dispatch:
+   - **Simple tasks** (< 10 files, single subsystem): Haiku inventory → read files directly. No sub-agents.
+   - **Complex tasks** (≥ 2 subsystems or > 20 file reads): after Haiku pre-tasks, spawn parallel sub-agents:
+     - Subagent A (`feature-dev:code-explorer`): trace execution paths, map affected components. Provide Haiku file list as scope.
+     - Subagent B (`general-purpose`): git/GitHub context
+     - Subagent C (`general-purpose`, optional): context7 docs only if library API must be verified
+     - Launch A + B with `run_in_background: true`. Merge findings after all complete.
 6. When research complete, run `/workflow transition --to plan`.
 
 #### Bugfix mode (`--mode bugfix`): Implement → Validate
@@ -71,12 +73,15 @@ Profile: `micro`. No Research, no Plan.
 
 Memory: `run-state.json`, `phase-summary-implement.json`, `phase-summary-validate.json` only.
 
-#### Lite mode (`--mode lite`): Plan → Implement → Validate
+#### Lite mode (`--mode lite`): Research+Plan (combined) → Implement → Validate
 
-Profile: `micro`. No Research.
+Profile: `micro`. Research and Plan merged into one pass.
 
 1. `npx tsx src/orchestrator.ts init --profile micro`
-2. Write plan (max 5 tasks, must fit in one response). If it can't, upgrade to `fast` full pipeline.
+2. Spawn the `research-planner` agent (`.claude/agents/research-planner.md`):
+   - It runs Haiku file inventory, reads focused files, produces ≤5-task plan in one pass
+   - Produces `phase-summary-plan.json` (with `combined_research_plan: true`) + `task-state.json`
+   - If it escalates (scope > 5 tasks or > 10 files), upgrade to `fast` full pipeline
 3. Implement → Validate. Two checkpoint gates.
 
 Memory: run-state, phase-summary-plan, task-state, phase-summary-implement, phase-summary-validate.
@@ -332,6 +337,34 @@ Failure response:
 | `weekly-synthesis.json` | `weekly-synthesis` | After weekly-synthesis subcommand | `eval/` |
 
 All JSON artifacts are validated with `src/validator.ts` before writing.
+
+---
+
+## Haiku Micro-Agent Pattern
+
+Any coordinator agent (Research, Planner, Validator, ResearchPlanner) may spawn a Haiku micro-agent for narrow, bounded tasks:
+
+```
+Agent(subagent_type: "general-purpose", model: "haiku",
+      prompt: "<single-purpose prompt with explicit output format>")
+```
+
+**Use when ALL are true:**
+- **Bounded**: clear input (1–few files or data structures) and explicit output format
+- **Non-reasoning**: no design judgment, risk assessment, or synthesis
+- **Enumerable**: file inventories, pattern counting, dependency extraction, data transformation
+
+**Common uses per phase:**
+| Phase | Haiku task |
+|---|---|
+| Research | File inventory before spawning code-explorer |
+| Research | Import extraction, symbol listing |
+| Plan | Dependency cycle detection on task list |
+| Validate | Count tasks by status in task-state.json |
+| Validate | Find resolved decisions missing `resolved_at` |
+| Lite (research-planner) | File inventory before direct reads |
+
+**Never use Haiku for**: confidence assessment, risk identification, synthesis across sources, tasks requiring run-state or profile config context.
 
 ---
 

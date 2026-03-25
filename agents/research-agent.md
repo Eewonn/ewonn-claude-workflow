@@ -42,17 +42,47 @@ Performs all domain research for the current task scope. Gathers evidence from t
 - Task scope is ambiguous and cannot be clarified without human input
 - Token emergency threshold (80%) reached mid-phase
 
+## Haiku Micro-Agent Pattern
+
+For narrow, bounded enumeration tasks, spawn a Haiku micro-agent **before** launching expensive sub-agents. This narrows scope so main sub-agents read only relevant files — not broadly.
+
+```
+Agent(
+  subagent_type: "general-purpose",
+  model: "haiku",
+  prompt: "<single-purpose prompt with explicit output format>",
+  run_in_background: false
+)
+```
+
+**Use Haiku for** (bounded, non-reasoning, enumerable):
+- File inventory: "List all files in `src/` matching pattern X. Return JSON array of paths."
+- Import extraction: "List all import paths in file Y. Return JSON array."
+- Symbol listing: "List all exported function names in file Z. Return JSON array."
+- Schema field extraction: "What are the required fields in schema file W? Return JSON array."
+
+**Never use Haiku for**: confidence assessment, risk identification, synthesis across sources, tasks needing run-state or profile context.
+
 ## Parallel Execution
 
-For tasks spanning ≥ 2 independent subsystems, or requiring > 20 file reads, spawn parallel subagents rather than reading serially:
+**Dispatch decision — evaluate before spawning anything:**
 
-- **Subagent A — Codebase**: reads source files, traces call paths, maps affected components. Use `subagent_type: Explore`.
+| Condition | Mode |
+|---|---|
+| ≥ 2 independent subsystems OR > 20 file reads | Parallel coordinator mode |
+| < 10 files, single subsystem | Serial — read directly, no sub-agents |
+
+**Step 0 (both modes): Run Haiku pre-tasks first.** Before spawning any main sub-agent, use Haiku to enumerate the relevant file list. This costs ~500 tokens and gives main sub-agents a focused scope rather than broad exploration.
+
+**Parallel mode sub-agents** (after Haiku pre-tasks):
+
+- **Subagent A — Codebase**: traces execution paths, maps affected components and dependencies. Use `subagent_type: feature-dev:code-explorer`. Provide the focused file list from Haiku pre-tasks.
 - **Subagent B — History/Context**: reads git log, recent commits, related GitHub issues/PRs. Use `subagent_type: general-purpose`.
-- **Subagent C — Docs** (if needed): queries context7 for library or framework documentation. Use `subagent_type: general-purpose`.
+- **Subagent C — Docs** (only if a third-party library API must be verified): queries context7. Use `subagent_type: general-purpose`.
 
-Launch all with `run_in_background: true`. Merge findings after all complete. Set `confidence` on merged findings using the shared rubric — if subagents disagreed or provided partial evidence, downgrade to `medium`.
+Launch A and B with `run_in_background: true`. Launch C only if needed (conditional). Merge findings after all complete. Set `confidence` on merged findings — if sub-agents disagreed or provided partial evidence, downgrade to `medium`.
 
-Skip parallel for simple tasks (< 10 files, single subsystem) — the Agent tool overhead is not worth it.
+**Serial mode**: Use Haiku pre-tasks for file inventory, then read those specific files directly in this agent. No sub-agent spawning — overhead not worth it for simple tasks.
 
 ## Token Budget Behavior
 

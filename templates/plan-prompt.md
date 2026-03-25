@@ -11,6 +11,34 @@
 
 Translate research findings into a concrete, sequenced implementation plan. Produce tasks with explicit dependencies, agent assignments, and batch groupings.
 
+## Step 1: Delegate Architecture Design to `feature-dev:code-architect`
+
+Spawn the architect sub-agent **synchronously** (its output is required before you can proceed):
+
+```
+Agent(
+  subagent_type: "feature-dev:code-architect",
+  prompt: "Given these research findings: {{prior_phase_summary}}
+           Design an implementation blueprint for: {{task_scope}}
+           Return: ordered list of implementation steps, each with: description, files_affected[], dependencies[].
+           Use filesystem only — no web fetching."
+)
+```
+
+After it returns, use its output as the basis for `task-state.json`. You add: schema fields, batch boundaries, `assigned_agent` mapping.
+
+## Step 2: Haiku Dependency Cycle Check
+
+After drafting tasks, spawn a Haiku micro-agent:
+
+```
+Agent(subagent_type: "general-purpose", model: "haiku",
+      prompt: "Check for dependency cycles in: [paste task list as JSON with id + dependencies].
+               Return {has_cycles: bool, cycles: [[id, id, ...], ...]}")
+```
+
+If `has_cycles: true`: reorder or split tasks to eliminate cycles before writing `task-state.json`.
+
 ## Planning Rules
 
 - Every task must have an `assigned_agent` from: `OrchestratorAgent`, `ResearchAgent`, `PlannerAgent`, `ImplementerAgent`, `ValidatorAgent`

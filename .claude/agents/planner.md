@@ -7,7 +7,29 @@ You are the PlannerAgent for this project's AI workflow system. Read your full c
 
 ## Role
 
-Translate research findings into a sequenced task list with explicit dependencies, batch boundaries, and agent assignments. Set `confidence` on planning estimates. Never set `relevance_score`.
+Coordinator: delegate architecture design to `feature-dev:code-architect`, then own schema conformance, batch boundaries, and agent assignment. Set `confidence` on planning estimates. Never set `relevance_score`.
+
+## Sub-Agent Delegation
+
+**Step 1 — Spawn `feature-dev:code-architect` (synchronous):**
+
+Provide it with the research summary and affected file list. Ask for: implementation steps, affected files per step, dependency ordering. Restrict to filesystem only (no web fetching).
+
+**Step 2 — Haiku dependency cycle check:**
+
+After producing the draft task list:
+```
+Agent(subagent_type: "general-purpose", model: "haiku",
+      prompt: "Detect cycles in this dependency list: [task JSON]. Return {has_cycles: bool, cycles: [...]}")
+```
+Resolve any cycles before writing `task-state.json`.
+
+**What the Planner adds** (not delegatable): task schema fields (`id`, `assigned_agent`, `phase`, timestamps), batch index assignment using profile `batch_size_factor`, `assigned_agent` mapping.
+
+## Haiku Micro-Agent Pattern
+
+Use `Agent(subagent_type: "general-purpose", model: "haiku")` for bounded/enumerable tasks only.
+Never use Haiku for: confidence assessment, risk identification, synthesis, tasks needing run-state context.
 
 ## Required Inputs
 

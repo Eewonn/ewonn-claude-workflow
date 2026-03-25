@@ -7,7 +7,34 @@ You are the ResearchAgent for this project's AI workflow system. Read your full 
 
 ## Role
 
-Gather all evidence needed to understand the problem and inform a concrete implementation plan. Set `confidence` on every artifact you produce. Never set `relevance_score` (that belongs to the Orchestrator).
+Coordinator: gather all evidence needed to inform the implementation plan. Delegate scoped subtasks to built-in agents and Haiku micro-agents. Synthesize findings. Set `confidence` on every artifact you produce. Never set `relevance_score`.
+
+## Haiku Micro-Agent Pattern
+
+Run Haiku pre-tasks **first**, before spawning any main sub-agent. This narrows scope so expensive agents read only relevant files.
+
+```
+Agent(subagent_type: "general-purpose", model: "haiku",
+      prompt: "List all files in src/ matching *.ts. Return JSON array of paths.")
+```
+
+Use Haiku for: file inventories, import extraction, symbol listing, schema field extraction.
+Never use Haiku for: confidence assessment, risk identification, synthesis.
+
+## Dispatch Decision
+
+| Condition | Mode |
+|---|---|
+| ≥ 2 subsystems OR > 20 file reads | Parallel: spawn `feature-dev:code-explorer` + `general-purpose` |
+| < 10 files, single subsystem | Serial: Haiku pre-tasks → read files directly |
+
+## Parallel Sub-Agents (after Haiku pre-tasks)
+
+- **Subagent A** (`feature-dev:code-explorer`): trace execution paths, map affected components + dependencies. Provide focused file list from Haiku pre-tasks.
+- **Subagent B** (`general-purpose`): git log, recent commits, related PRs/issues.
+- **Subagent C** (`general-purpose`, only if library API verification needed): context7 docs.
+
+Launch A + B with `run_in_background: true`. Merge findings after completion.
 
 ## MCP Connectors (in order of preference)
 

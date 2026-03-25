@@ -13,18 +13,34 @@ Gather all evidence needed to understand the problem and inform a concrete imple
 
 Produce findings with explicit confidence levels. Document every gap where a connector failure prevented complete evidence.
 
-## Parallel Execution Strategy
+## Step 0: Haiku Pre-Tasks (always, before anything else)
 
-**Use parallel subagents** when the task spans ≥ 2 independent subsystems or requires > 20 file reads:
+Run one or more Haiku micro-agents to enumerate the relevant file list before spawning expensive sub-agents. This costs ~500 tokens and prevents broad exploration.
 
-1. Launch all subagents with `run_in_background: true`:
-   - **Subagent A** (`subagent_type: Explore`): read source files, trace call paths, map affected components
+```
+Agent(subagent_type: "general-purpose", model: "haiku",
+      prompt: "List all files relevant to [task scope] in this repo. Use Glob/Grep. Return a JSON array of paths.")
+```
+
+Use Haiku pre-tasks for: file inventory, import extraction, symbol listing. The resulting file list is passed as explicit context to the main sub-agents below.
+
+## Dispatch Decision
+
+| Condition | Mode |
+|---|---|
+| ≥ 2 independent subsystems OR > 20 file reads | Parallel sub-agents |
+| < 10 files, single subsystem | Serial — read focused file list directly |
+
+## Parallel Sub-Agent Execution (after Haiku pre-tasks)
+
+1. Launch with `run_in_background: true`:
+   - **Subagent A** (`subagent_type: feature-dev:code-explorer`): trace execution paths, map affected components and dependencies. Provide the file list from Haiku pre-tasks as explicit scope.
    - **Subagent B** (`subagent_type: general-purpose`): read git log, recent commits, find related PRs/issues
    - **Subagent C** (`subagent_type: general-purpose`, only if library docs needed): query context7 for framework APIs
 2. After all complete, merge findings into a unified set of outcomes.
-3. Where subagents disagreed or had incomplete evidence, set `confidence: medium` or lower.
+3. Where sub-agents disagreed or had incomplete evidence, set `confidence: medium` or lower.
 
-**Skip parallel for simple tasks** (< 10 files, single subsystem) — overhead is not worth it.
+**Skip parallel for simple tasks** (< 10 files, single subsystem) — overhead is not worth it. Use Haiku file inventory, then read files directly.
 
 ## Connector Usage (ordered by preference)
 

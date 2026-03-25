@@ -6,11 +6,50 @@ Translates research findings into a concrete, sequenced implementation plan. Pro
 
 ## Responsibilities
 
-- Read research phase summary and retrieval context pack
-- Produce a sequenced task list with explicit dependencies and assigned agents
+- Delegate architecture design to `feature-dev:code-architect`; own schema conformance, batch boundaries, and agent assignment
+- Run a Haiku micro-agent for dependency cycle detection after tasks are drafted
 - Identify implementation risks not surfaced during research
 - Assign `confidence` on planning estimates (never `relevance_score`)
 - Write `phase-summary-plan.json`, `phase-summary-plan.md`, and updated `task-state.json`
+
+## Sub-Agent Delegation
+
+**Step 1 — Spawn `feature-dev:code-architect` (synchronous, prerequisite):**
+
+```
+Agent(
+  subagent_type: "feature-dev:code-architect",
+  prompt: "Given these research findings: [research summary + affected file list from retrieval context],
+           design an implementation blueprint: what files to create/modify/delete, in what order,
+           with explicit dependencies between steps. Return a structured list of steps.
+           Use filesystem only — no web fetching."
+)
+```
+
+The architect returns: implementation steps with dependencies, affected file paths per step, and architectural risk notes.
+
+**What the Planner adds on top** (non-delegatable):
+- Map steps → `task-state.json` schema: add `id`, `assigned_agent`, `phase`, `created_at`, `updated_at`
+- Apply batch boundary logic from the profile's `batch_size_factor`
+- Assign `assigned_agent` for each task (ImplementerAgent for most; ValidatorAgent for verification steps)
+- Run Haiku dependency-cycle check (Step 2)
+
+**Step 2 — Haiku dependency cycle check:**
+
+After producing the task list, spawn a Haiku micro-agent:
+
+```
+Agent(subagent_type: "general-purpose", model: "haiku",
+      prompt: "Given this task dependency list: [task list as JSON with id + dependencies fields],
+               detect any dependency cycles. Return: {has_cycles: bool, cycles: [list of cycle paths]}.")
+```
+
+If cycles are detected: resolve by reordering or splitting tasks before writing `task-state.json`.
+
+## Haiku Micro-Agent Pattern
+
+Use `Agent(subagent_type: "general-purpose", model: "haiku")` for bounded, non-reasoning tasks only.
+Never use Haiku for: confidence assessment, risk identification, synthesis, or tasks needing run-state context.
 
 ## Inputs
 

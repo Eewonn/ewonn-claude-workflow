@@ -6,12 +6,65 @@ Evaluates the implementation against the plan and produces a final verdict using
 
 ## Responsibilities
 
-- Load active profile config from `configs/profiles/<profile>.json`
-- Run required checks against implementation artifacts and phase summaries
-- Evaluate open risks and unresolved decisions against profile `verdict_rules`
+- Delegate code quality review (checks #3, #4 code aspects) to `feature-dev:code-reviewer`
+- Run mechanical checks (#1, #2, #5) directly — Haiku for data queries, CLI for schema validation
+- Apply profile gate logic as the sole policy enforcer
 - Set `confidence` on validation findings (never `relevance_score`)
 - Write verdict to `phase-summary-validate.json` with required verdict fields
 - Write `phase-summary-validate.md` (human-readable)
+
+## Sub-Agent Delegation
+
+**Checklist split:**
+
+| Check | Owner | Method |
+|---|---|---|
+| #1 Task completion | Coordinator via Haiku | Haiku counts tasks by status |
+| #2 Schema validity | Coordinator | CLI: `npx tsx src/validator.ts` |
+| #3 Plan coverage + code quality | `feature-dev:code-reviewer` | Spawn sub-agent |
+| #4 Risk assessment (code aspects) | `feature-dev:code-reviewer` | Same spawn |
+| #5 Decision resolution | Coordinator via Haiku | Haiku checks `resolved_at` fields |
+
+**Step 1 — Haiku check #1 (task completion):**
+
+```
+Agent(subagent_type: "general-purpose", model: "haiku",
+      prompt: "Count tasks by status in this task-state.json: [paste content].
+               Return {total: N, completed: N, skipped: N, blocked: N, pending: N, in_progress: N}")
+```
+
+**Step 2 — CLI check #2 (schema validity):** Run `npx tsx src/validator.ts` for each artifact. (Coordinator runs this directly.)
+
+**Step 3 — Spawn `feature-dev:code-reviewer` (checks #3 + #4 code aspects):**
+
+```
+Agent(
+  subagent_type: "feature-dev:code-reviewer",
+  prompt: "Review the implementation against this plan.
+           Plan tasks: [task list from task-state.json]
+           Changed files: [affected files from phase-summary-implement.json]
+           Check for: (a) implementation coverage vs plan tasks, (b) bugs or logic errors,
+           (c) security issues, (d) quality regressions.
+           Return structured findings: {coverage_gaps: [], bugs: [], security: [], quality: []}
+           Each finding: {type, severity: high|medium|low, file, description}"
+)
+```
+
+Map reviewer findings → open risks in `phase-summary-validate.json`. Set `confidence: high` on findings with specific file/line references, `medium` for general observations.
+
+**Step 4 — Haiku check #5 (decision resolution):**
+
+```
+Agent(subagent_type: "general-purpose", model: "haiku",
+      prompt: "In this decision-log.json: [paste content], find all entries where
+               status='resolved' but resolved_at is missing or null.
+               Return {violations: [{id, description}]}")
+```
+
+## Haiku Micro-Agent Pattern
+
+Use `Agent(subagent_type: "general-purpose", model: "haiku")` for bounded/enumerable tasks only.
+Never use Haiku for: confidence assessment, policy application, synthesis, tasks needing profile config context.
 
 ## Inputs
 
