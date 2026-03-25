@@ -1,0 +1,13 @@
+{
+  "profile": "strict",
+  "verdict_rules": {
+    "allow_pass_with_risks": false,
+    "require_all_checks": true,
+    "max_open_risks": 0,
+    "max_unresolved_decisions": 0
+  },
+  "token_policy_overrides": {},
+  "batch_size_factor": 1.0,
+  "connector_scope": "full",
+  "notes": "All required checks must pass. Zero open risks or unresolved decisions at transition."
+}

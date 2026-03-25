@@ -1,0 +1,21 @@
+{
+  "name": "ewonn-claude-workflow",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Hybrid AI workflow orchestration system for Claude Code (Research → Plan → Implement → Validate)",
+  "scripts": {
+    "validate": "tsx src/validator.ts",
+    "orchestrate": "tsx src/orchestrator.ts",
+    "workflow": "tsx src/index.ts",
+    "test": "echo 'no tests yet'"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}

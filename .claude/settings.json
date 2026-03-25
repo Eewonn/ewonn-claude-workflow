@@ -1,0 +1,25 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd '/home/ewonn/Documents/Personal Projects/ewonn-claude-workflow' && [ -L runs/current ] && npx tsx src/orchestrator.ts status 2>/dev/null || true"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c \"\nimport sys, json, os, subprocess\ntry:\n    data = json.load(sys.stdin)\nexcept Exception:\n    sys.exit(0)\nfp = data.get('tool_input', {}).get('file_path', '')\nif not fp.endswith('.json'):\n    sys.exit(0)\nname = os.path.basename(fp)\nschema_map = {\n    'run-state.json': 'run-state',\n    'decision-log.json': 'decision-log',\n    'task-state.json': 'task-state',\n    'retrieval-index.json': 'retrieval-index',\n}\nfor phase in ['research','plan','implement','validate']:\n    schema_map[f'phase-summary-{phase}.json'] = 'phase-summary'\nschema = schema_map.get(name)\nif not schema:\n    sys.exit(0)\nproj = '/home/ewonn/Documents/Personal Projects/ewonn-claude-workflow'\nresult = subprocess.run(['npx','tsx','src/validator.ts', schema, fp], capture_output=True, text=True, cwd=proj)\nif result.stdout:\n    print(result.stdout, end='')\nif result.returncode != 0:\n    print(f'SCHEMA VALIDATION FAILED for {name}: {result.stderr}', file=sys.stderr)\n    sys.exit(2)\n\""
+          }
+        ]
+      }
+    ]
+  }
+}

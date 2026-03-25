@@ -1,0 +1,19 @@
+{
+  "run_id": "",
+  "status": "initializing",
+  "current_phase": null,
+  "profile": "balanced",
+  "phases_completed": [],
+  "created_at": "",
+  "updated_at": "",
+  "token_usage": {
+    "phase_tokens": 0,
+    "run_tokens": 0,
+    "last_threshold_triggered": null
+  },
+  "checkpoint_history": [],
+  "active_risks": [],
+  "unresolved_decisions": [],
+  "rollback_metadata": null,
+  "run_dir": ""
+}

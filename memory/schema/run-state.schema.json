@@ -1,0 +1,103 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "run-state",
+  "title": "Run State",
+  "description": "Authoritative execution state for a workflow run. Validated on every write.",
+  "type": "object",
+  "required": [
+    "run_id", "status", "current_phase", "profile",
+    "phases_completed", "created_at", "updated_at",
+    "token_usage", "checkpoint_history",
+    "active_risks", "unresolved_decisions",
+    "rollback_metadata", "run_dir"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "pattern": "^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$",
+      "description": "Format: YYYYMMDD-HHmmss-{6hex}"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "initializing", "running", "checkpoint_pending",
+        "rollback_pending", "blocked", "completed", "failed"
+      ]
+    },
+    "current_phase": {
+      "oneOf": [
+        { "type": "string", "enum": ["research", "plan", "implement", "validate"] },
+        { "type": "null" }
+      ]
+    },
+    "profile": {
+      "type": "string",
+      "enum": ["strict", "balanced", "fast"]
+    },
+    "phases_completed": {
+      "type": "array",
+      "items": { "type": "string", "enum": ["research", "plan", "implement", "validate"] },
+      "uniqueItems": true
+    },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "token_usage": {
+      "type": "object",
+      "required": ["phase_tokens", "run_tokens", "last_threshold_triggered"],
+      "additionalProperties": false,
+      "properties": {
+        "phase_tokens": { "type": "number", "minimum": 0 },
+        "run_tokens": { "type": "number", "minimum": 0 },
+        "last_threshold_triggered": {
+          "oneOf": [
+            { "type": "string", "enum": ["warn", "compress", "emergency"] },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "checkpoint_history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["phase", "approved", "timestamp"],
+        "additionalProperties": false,
+        "properties": {
+          "phase": { "type": "string", "enum": ["research", "plan", "implement", "validate"] },
+          "approved": { "type": "boolean" },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "active_risks": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "unresolved_decisions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Decision IDs referencing entries in decision-log.json"
+    },
+    "rollback_metadata": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["reason", "failed_step", "restored_at"],
+          "additionalProperties": false,
+          "properties": {
+            "reason": { "type": "string" },
+            "failed_step": { "type": "string" },
+            "restored_at": { "type": "string", "format": "date-time" }
+          }
+        },
+        { "type": "null" }
+      ]
+    },
+    "run_dir": {
+      "type": "string",
+      "description": "Absolute path to this run's artifact directory"
+    }
+  }
+}

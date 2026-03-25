@@ -1,0 +1,55 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "retrieval-index",
+  "title": "Retrieval Index",
+  "description": "Index of persisted memory artifacts used to build minimal context packs per phase.",
+  "type": "object",
+  "required": ["index_id", "run_id", "entries", "last_updated"],
+  "additionalProperties": false,
+  "properties": {
+    "index_id": { "type": "string" },
+    "run_id": { "type": "string" },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id", "artifact_path", "run_id", "phase",
+          "task_ids", "tags", "created_at", "updated_at",
+          "confidence", "relevance_score", "token_weight",
+          "dependencies", "status"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "artifact_path": { "type": "string" },
+          "run_id": { "type": "string" },
+          "phase": { "type": "string", "enum": ["research", "plan", "implement", "validate"] },
+          "task_ids": { "type": "array", "items": { "type": "string" } },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" },
+          "confidence": { "type": "string", "enum": ["high", "medium", "low"] },
+          "relevance_score": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Set by OrchestratorAgent only, never by phase agents"
+          },
+          "token_weight": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Estimated token size if this artifact is loaded into context"
+          },
+          "dependencies": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Related decision IDs or artifact IDs"
+          },
+          "status": { "type": "string", "enum": ["active", "superseded", "archived"] }
+        }
+      }
+    },
+    "last_updated": { "type": "string", "format": "date-time" }
+  }
+}

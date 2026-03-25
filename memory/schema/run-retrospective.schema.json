@@ -1,0 +1,98 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "run-retrospective",
+  "title": "Run Retrospective",
+  "description": "Per-run improvement artifact generated after run completion.",
+  "type": "object",
+  "required": [
+    "run_id", "profile", "final_status", "phase_metrics",
+    "failures", "blocked_reasons", "successful_patterns",
+    "prompt_issues", "skill_gaps", "recommended_changes", "created_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "run_id": { "type": "string" },
+    "profile": { "type": "string", "enum": ["strict", "balanced", "fast"] },
+    "final_status": { "type": "string", "enum": ["completed", "blocked", "failed"] },
+    "phase_metrics": {
+      "type": "object",
+      "required": ["research", "plan", "implement", "validate"],
+      "additionalProperties": false,
+      "properties": {
+        "research": { "$ref": "#/$defs/phaseMetric" },
+        "plan":     { "$ref": "#/$defs/phaseMetric" },
+        "implement": { "$ref": "#/$defs/phaseMetric" },
+        "validate": { "$ref": "#/$defs/phaseMetric" }
+      }
+    },
+    "failures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "phase", "severity", "root_cause", "resolution_attempted"],
+        "additionalProperties": false,
+        "properties": {
+          "type": { "type": "string" },
+          "phase": { "type": "string", "enum": ["research", "plan", "implement", "validate"] },
+          "severity": { "type": "string", "enum": ["critical", "major", "minor"] },
+          "root_cause": { "type": "string" },
+          "resolution_attempted": { "type": "boolean" }
+        }
+      }
+    },
+    "blocked_reasons": { "type": "array", "items": { "type": "string" } },
+    "successful_patterns": { "type": "array", "items": { "type": "string" } },
+    "prompt_issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["template", "issue", "severity"],
+        "additionalProperties": false,
+        "properties": {
+          "template": { "type": "string" },
+          "issue": { "type": "string" },
+          "severity": { "type": "string", "enum": ["high", "medium", "low"] }
+        }
+      }
+    },
+    "skill_gaps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["skill_name", "gap_description"],
+        "additionalProperties": false,
+        "properties": {
+          "skill_name": { "type": "string" },
+          "gap_description": { "type": "string" }
+        }
+      }
+    },
+    "recommended_changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["target_type", "target", "description", "priority"],
+        "additionalProperties": false,
+        "properties": {
+          "target_type": { "type": "string", "enum": ["config", "prompt", "skill", "process"] },
+          "target": { "type": "string" },
+          "description": { "type": "string" },
+          "priority": { "type": "string", "enum": ["high", "medium", "low"] }
+        }
+      }
+    },
+    "created_at": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "phaseMetric": {
+      "type": "object",
+      "required": ["tokens_used", "duration_seconds", "checkpoint_count"],
+      "additionalProperties": false,
+      "properties": {
+        "tokens_used": { "type": "number", "minimum": 0 },
+        "duration_seconds": { "type": "number", "minimum": 0 },
+        "checkpoint_count": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

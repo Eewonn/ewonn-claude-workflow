@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "improvement-deployment",
+  "title": "Improvement Deployment",
+  "description": "Record of approved actions being applied to repository artifacts (Phase 9 — governance deferred post-v1). Schema scaffolded now so validator can handle the file format.",
+  "type": "object",
+  "required": [
+    "deployment_id", "window_start", "window_end",
+    "actions_reviewed", "actions_approved", "actions_applied", "actions_failed",
+    "affected_files", "validation_result", "rollback_required",
+    "approver", "applied_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "deployment_id": { "type": "string" },
+    "window_start": { "type": "string", "format": "date-time" },
+    "window_end": { "type": "string", "format": "date-time" },
+    "actions_reviewed": { "type": "integer", "minimum": 0 },
+    "actions_approved": { "type": "integer", "minimum": 0 },
+    "actions_applied": { "type": "integer", "minimum": 0 },
+    "actions_failed": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Code-level check enforces: actions_applied + actions_failed <= actions_approved"
+    },
+    "affected_files": { "type": "array", "items": { "type": "string" } },
+    "validation_result": { "type": "string", "enum": ["pass", "fail"] },
+    "rollback_required": { "type": "boolean" },
+    "approver": { "type": "string" },
+    "applied_at": { "type": "string", "format": "date-time" }
+  }
+}

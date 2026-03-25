@@ -1,0 +1,46 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "task-state",
+  "title": "Task State",
+  "description": "Tracks all tasks and their status within a run.",
+  "type": "object",
+  "required": ["task_log_id", "run_id", "tasks", "current_batch_index"],
+  "additionalProperties": false,
+  "properties": {
+    "task_log_id": { "type": "string" },
+    "run_id": { "type": "string" },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "phase", "status", "assigned_agent", "created_at", "updated_at"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "phase": { "type": "string", "enum": ["research", "plan", "implement", "validate"] },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "in_progress", "completed", "blocked", "skipped"]
+          },
+          "dependencies": { "type": "array", "items": { "type": "string" } },
+          "assigned_agent": {
+            "type": "string",
+            "enum": [
+              "OrchestratorAgent",
+              "ResearchAgent",
+              "PlannerAgent",
+              "ImplementerAgent",
+              "ValidatorAgent"
+            ]
+          },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" },
+          "completion_notes": { "type": "string" },
+          "batch_index": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "current_batch_index": { "type": "integer", "minimum": 0 }
+  }
+}

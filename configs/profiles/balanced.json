@@ -1,0 +1,13 @@
+{
+  "profile": "balanced",
+  "verdict_rules": {
+    "allow_pass_with_risks": true,
+    "require_all_checks": true,
+    "max_open_risks": 3,
+    "max_unresolved_decisions": 2
+  },
+  "token_policy_overrides": {},
+  "batch_size_factor": 1.0,
+  "connector_scope": "full",
+  "notes": "Default profile. Pass with risks allowed if risk count is within bounds and all risks are documented."
+}

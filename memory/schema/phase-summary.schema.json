@@ -1,0 +1,84 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "phase-summary",
+  "title": "Phase Summary",
+  "description": "Outcomes and state at the end of a workflow phase.",
+  "type": "object",
+  "required": [
+    "summary_id", "run_id", "phase", "status",
+    "outcomes", "open_risks", "unresolved_decisions",
+    "connector_gaps", "token_summary", "created_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "summary_id": { "type": "string" },
+    "run_id": { "type": "string" },
+    "phase": { "type": "string", "enum": ["research", "plan", "implement", "validate"] },
+    "status": { "type": "string", "enum": ["completed", "blocked", "failed"] },
+    "outcomes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "description": "Non-empty — a summary with no outcomes is invalid"
+    },
+    "open_risks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "description", "severity"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "description": { "type": "string" },
+          "severity": { "type": "string", "enum": ["high", "medium", "low"] }
+        }
+      }
+    },
+    "unresolved_decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "description"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "description": { "type": "string" },
+          "options": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "connector_gaps": {
+      "type": "array",
+      "description": "Evidence holes caused by connector failures during this phase",
+      "items": {
+        "type": "object",
+        "required": ["connector", "operation", "error_class", "affected_findings"],
+        "additionalProperties": false,
+        "properties": {
+          "connector": { "type": "string" },
+          "operation": { "type": "string" },
+          "error_class": {
+            "type": "string",
+            "enum": ["auth", "rate_limit", "timeout", "missing_resource", "unknown"]
+          },
+          "affected_findings": { "type": "string" }
+        }
+      }
+    },
+    "token_summary": {
+      "type": "object",
+      "required": ["tokens_used", "peak_threshold_hit"],
+      "additionalProperties": false,
+      "properties": {
+        "tokens_used": { "type": "number", "minimum": 0 },
+        "peak_threshold_hit": {
+          "oneOf": [
+            { "type": "string", "enum": ["warn", "compress", "emergency"] },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "created_at": { "type": "string", "format": "date-time" }
+  }
+}

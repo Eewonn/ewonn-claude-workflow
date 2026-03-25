@@ -1,0 +1,119 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "weekly-synthesis",
+  "title": "Weekly Synthesis",
+  "description": "Aggregated improvement analysis across multiple runs.",
+  "type": "object",
+  "required": [
+    "synthesis_id", "window_start", "window_end",
+    "run_count", "run_ids", "blocker_clusters",
+    "profile_comparison", "token_efficiency_trends",
+    "top_prompt_changes", "top_skill_changes",
+    "expected_impact", "approved_actions", "created_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "synthesis_id": { "type": "string" },
+    "window_start": { "type": "string", "format": "date-time" },
+    "window_end": { "type": "string", "format": "date-time" },
+    "run_count": { "type": "integer", "minimum": 1 },
+    "run_ids": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "blocker_clusters": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["cluster_name", "frequency", "affected_phases", "example_run_ids"],
+        "additionalProperties": false,
+        "properties": {
+          "cluster_name": { "type": "string" },
+          "frequency": { "type": "integer", "minimum": 1 },
+          "affected_phases": {
+            "type": "array",
+            "items": { "type": "string", "enum": ["research", "plan", "implement", "validate"] }
+          },
+          "example_run_ids": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "profile_comparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "strict":   { "$ref": "#/$defs/profileStats" },
+        "balanced": { "$ref": "#/$defs/profileStats" },
+        "fast":     { "$ref": "#/$defs/profileStats" }
+      }
+    },
+    "token_efficiency_trends": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["week_offset", "avg_phase_tokens", "compress_trigger_rate"],
+        "additionalProperties": false,
+        "properties": {
+          "week_offset": { "type": "integer" },
+          "avg_phase_tokens": { "type": "number", "minimum": 0 },
+          "compress_trigger_rate": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
+    },
+    "top_prompt_changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["template", "change_description", "priority", "affected_runs"],
+        "additionalProperties": false,
+        "properties": {
+          "template": { "type": "string" },
+          "change_description": { "type": "string" },
+          "priority": { "type": "string", "enum": ["high", "medium", "low"] },
+          "affected_runs": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "top_skill_changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["skill_name", "change_description", "priority"],
+        "additionalProperties": false,
+        "properties": {
+          "skill_name": { "type": "string" },
+          "change_description": { "type": "string" },
+          "priority": { "type": "string", "enum": ["high", "medium", "low"] }
+        }
+      }
+    },
+    "expected_impact": { "type": "string" },
+    "approved_actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["action_id", "type", "target", "description", "approved_by", "approved_at"],
+        "additionalProperties": false,
+        "properties": {
+          "action_id": { "type": "string" },
+          "type": { "type": "string", "enum": ["config", "prompt", "skill", "process"] },
+          "target": { "type": "string" },
+          "description": { "type": "string" },
+          "approved_by": { "type": "string" },
+          "approved_at": { "type": "string", "format": "date-time" }
+        }
+      }
+    },
+    "created_at": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "profileStats": {
+      "type": "object",
+      "required": ["run_count", "avg_tokens", "avg_duration_seconds", "pass_rate"],
+      "additionalProperties": false,
+      "properties": {
+        "run_count": { "type": "integer", "minimum": 0 },
+        "avg_tokens": { "type": "number", "minimum": 0 },
+        "avg_duration_seconds": { "type": "number", "minimum": 0 },
+        "pass_rate": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    }
+  }
+}

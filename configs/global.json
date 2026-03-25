@@ -1,0 +1,45 @@
+{
+  "schema_version": "1.0.0",
+  "default_profile": "balanced",
+  "run_id_format": "YYYYMMDD-HHmmss-{6hex}",
+  "runs_dir": "runs",
+  "eval_dir": "eval",
+  "memory_schema_dir": "memory/schema",
+  "memory_templates_dir": "memory/templates",
+  "agents_dir": "agents",
+  "templates_dir": "templates",
+  "skills_dir": "skills",
+  "token_policy": {
+    "phase_max": 80000,
+    "run_max": 320000,
+    "warn_at": 0.40,
+    "compress_at": 0.60,
+    "emergency_at": 0.80
+  },
+  "retrieval": {
+    "preload_token_budget": 8000,
+    "always_include_unresolved_risks": true,
+    "always_include_latest_decisions": true,
+    "max_entries_per_query": 20,
+    "mandatory_context_token_limit": 2000
+  },
+  "connector_failure_policy": {
+    "auto_retry": false,
+    "critical_connectors_by_phase": {
+      "research": [],
+      "plan": ["filesystem"],
+      "implement": ["filesystem", "git"],
+      "validate": ["filesystem"]
+    },
+    "graceful_degrade_on_non_critical": true
+  },
+  "weekly_synthesis": {
+    "trigger": "manual",
+    "min_runs_required": 1
+  },
+  "improvement_loop": {
+    "generate_retrospective": true,
+    "retrospective_on_blocked": true,
+    "retrospective_on_failed": true
+  }
+}

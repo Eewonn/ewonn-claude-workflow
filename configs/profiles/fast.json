@@ -1,0 +1,17 @@
+{
+  "profile": "fast",
+  "verdict_rules": {
+    "allow_pass_with_risks": true,
+    "require_all_checks": false,
+    "max_open_risks": 10,
+    "max_unresolved_decisions": 5
+  },
+  "token_policy_overrides": {
+    "phase_max": 40000,
+    "warn_at": 0.50,
+    "compress_at": 0.70
+  },
+  "batch_size_factor": 1.5,
+  "connector_scope": "reduced",
+  "notes": "Reduced checks for rapid iteration. All risks must still be documented. Lower token limits. connector_scope=reduced means filesystem only — remote connectors skipped."
+}
