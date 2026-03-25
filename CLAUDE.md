@@ -28,6 +28,8 @@ npx tsx src/orchestrator.ts checkpoint --approved <true|false> --reason "<text>"
 npx tsx src/orchestrator.ts rollback --reason "<text>"
 npx tsx src/orchestrator.ts compress --phase <phase> --tokens-used <n>
 npx tsx src/orchestrator.ts finalize --status <completed|failed>
+npx tsx src/orchestrator.ts list
+npx tsx src/orchestrator.ts abort [--reason "<text>"]
 
 # Help
 npx tsx src/index.ts
@@ -61,7 +63,7 @@ If approval is denied or next-phase init fails → **rollback**: restore previou
 
 ### Memory System
 
-All memory artifacts live under `memory/`. Hybrid JSON + Markdown:
+All memory artifacts for a run live under `runs/<run-id>/`. Schemas and templates live under `memory/`. Hybrid JSON + Markdown:
 
 - `run-state.json` — authoritative execution state (schema-validated on every write)
 - `phase-summary.json` + `phase-summary.md` — phase outcomes
@@ -116,23 +118,30 @@ Connector failure policy: classify error → log to run events → no automatic 
 
 Each run produces `run-retrospective.json` + `run-retrospective.md`. Weekly synthesis aggregates across runs into `weekly-synthesis.json` + `weekly-synthesis.md` and proposes `approved_actions`. Phase 9 (post-v1) adds governance: human approval → deployment flow → `improvement-deployment.json`.
 
-## Planned Folder Structure
+## Folder Structure
 
 ```
-agents/       # Agent contract definitions
+src/              TypeScript CLIs (orchestrator, validator, token-budget, memory store/retrieval)
+agents/           Agent contract definitions (.md)
+templates/        Prompt templates per phase + human checkpoint prompt
+skills/           workflow.md — main Claude Code skill (9 subcommands)
 memory/
-  schema/     # JSON schemas (run-state.schema.json, etc.)
-configs/      # Global config + profile configs (strict, balanced, fast)
-skills/       # Reusable skills (summarize_phase, compress_context, planning, validate_gate)
-templates/    # Prompt templates per phase + human checkpoint prompt
-runs/         # Per-run artifacts (run-state, phase summaries, retrospectives)
-eval/         # Weekly synthesis and improvement artifacts
+  schema/         8 JSON schemas (run-state, phase-summary, decision-log, etc.)
+  templates/      Empty starter artifacts (copied into run dir at init)
+configs/          global.json + profiles/ (strict, balanced, fast)
+runs/             Per-run artifact directories (created at runtime)
+  current         Symlink → active run directory (updated by `init`)
+  <run-id>/       run-state.json, phase summaries, decision-log, snapshots/, etc.
+eval/             Retrospectives and weekly synthesis outputs
+.claude/
+  agents/         5 spawnable Claude Code agent files
+  settings.json   Hooks: Stop (auto-status) + PostToolUse Write (auto-validate)
 ```
 
-## JSON Schemas Required
+## Claude Code Integration
 
-All writes to `run-state.json` must pass schema validation before writing. Phase transitions must validate both state and phase summary schemas before advancing. Schemas live in `memory/schema/`.
-
-Required schemas: `run-state`, `phase-summary`, `decision-log`, `task-state`, `retrieval-index`.
-
-Required improvement schemas: `run-retrospective`, `weekly-synthesis`, `improvement-deployment`.
+- **Agents**: `.claude/agents/` — 5 agent files spawnable by Claude Code (`orchestrator`, `research`, `planner`, `implementer`, `validator`). Each embeds inline rules and references its source contract in `agents/`.
+- **Stop hook**: After every Claude response, if `runs/current` symlink exists, auto-runs `orchestrator.ts status` to show live run state.
+- **PostToolUse Write hook**: When any known JSON artifact is written, auto-validates against its schema. Exit code 2 on failure blocks the write and notifies Claude.
+- **`/workflow` skill**: Global skill at `~/.claude/skills/workflow/SKILL.md`. Subcommands: `start`, `transition`, `status`, `list`, `compress`, `checkpoint`, `validate`, `abort`, `retrospective`, `weekly-synthesis`.
+- **`runs/current`**: Symlink to the active run directory. Created by `init`, used by all commands that omit `--run-dir`. Allows `/workflow status` to work across sessions without remembering the run ID.
