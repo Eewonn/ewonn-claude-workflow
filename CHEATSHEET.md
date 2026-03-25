@@ -17,6 +17,29 @@ Skip it for: quick one-file fixes, typo corrections, single-function changes.
 
 ---
 
+## Quick reference
+
+```
+/workflow start                         Start a new run (balanced profile)
+/workflow start --profile fast          Start with fast profile
+/workflow status                        Show current run state
+/workflow list                          Show all past runs
+/workflow abort --reason "..."          Cancel in-progress run
+/workflow validate                      Schema-check all current artifacts
+/workflow retrospective                 Generate improvement report after run
+/workflow weekly-synthesis              Aggregate reports across multiple runs
+```
+
+At a checkpoint, respond with:
+```
+APPROVE: <your reason>
+DENY: <your reason>
+```
+
+---
+
+
+
 ## Step-by-step: A full run
 
 ### 1. Open Claude Code in your project
@@ -99,11 +122,11 @@ Type your response in plain English. The `APPROVE:` / `DENY:` prefix is what tri
 /workflow start --profile <strict|balanced|fast>
 ```
 
-| Profile | Use when |
-|---|---|
-| `balanced` | Almost everything. The default. |
-| `strict` | Production deployments, security changes, anything that must ship clean. Zero open risks allowed at the end. |
-| `fast` | Prototyping, exploration, "I just want to see if this approach works." Lower token limits, skips some checks. |
+|   Profile   | Use when                                                                                                               |
+|-------------|------------------------------------------------------------------------------------------------------------------------|
+|  `balanced` | Almost everything. The default.                                                                                        |
+|  `strict`   | Production deployments, security changes, anything that must ship clean. Zero open risks allowed at the end.           |
+|  `fast`     | Prototyping, exploration, "I just want to see if this approach works." Lower token limits, skips some checks.          |
 
 You can't change the profile mid-run. If you need to switch, abort and restart.
 
@@ -188,37 +211,16 @@ This clusters patterns across runs and suggests config/prompt improvements.
 
 ## What the phases actually do
 
-| Phase | What Claude does | What you do |
-|---|---|---|
-| **Research** | Reads code, git history, docs. Builds a picture of the codebase. | Describe the task. Answer questions if asked. |
-| **Plan** | Creates a sequenced task list with dependencies and batch assignments. | Review the checkpoint. Deny if the plan looks wrong. |
-| **Implement** | Executes tasks batch-by-batch. Commits after each batch. | Review the checkpoint. Check the commits if you want. |
-| **Validate** | Checks the implementation against the plan. Produces a verdict. | Review the final checkpoint. Approve = run complete. |
+|     Phase     | What Claude does                                                       | What you do                                   |
+|---------------|------------------------------------------------------------------------|-----------------------------------------------|
+| **Research**  | Reads code, git history, docs. Builds a picture of the codebase.       | Describe the task. Answer questions if asked. |
+| **Plan**      | Creates a sequenced task list with dependencies and batch assignments. | Review the checkpoint. Deny if the plan looks wrong. |
+| **Implement** | Executes tasks batch-by-batch. Commits after each batch.               | Review the checkpoint. Check the commits if you want. |
+| **Validate**  | Checks the implementation against the plan. Produces a verdict.        | Review the final checkpoint. Approve = run complete. |
 
 ---
 
-## Quick reference
-
-```
-/workflow start                         Start a new run (balanced profile)
-/workflow start --profile fast          Start with fast profile
-/workflow status                        Show current run state
-/workflow list                          Show all past runs
-/workflow abort --reason "..."          Cancel in-progress run
-/workflow validate                      Schema-check all current artifacts
-/workflow retrospective                 Generate improvement report after run
-/workflow weekly-synthesis              Aggregate reports across multiple runs
-```
-
-At a checkpoint, respond with:
-```
-APPROVE: <your reason>
-DENY: <your reason>
-```
-
----
-
-## Gotchas
+## NOTE
 
 **Don't switch projects mid-run.** The `runs/current` symlink points to the run for the project you started from. Running `/workflow status` from a different project directory won't find it.
 
