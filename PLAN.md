@@ -695,6 +695,30 @@ Assessment happens before `orchestrator.ts init`. User confirms or overrides bef
 
 ---
 
+## Orchestrator Bugs (to fix)
+
+Surfaced during a full portfolio redesign run. Fix before v1.2.
+
+| # | Issue | Evidence | Fix |
+|---|---|---|---|
+| 4 | **`wf checkpoint` reports wrong "advancing to phase"** | After approving research→plan, output said *"advancing to phase 'research'"* — phase name in the message is off by one | ✓ Fixed: `cmdTransition` now stores `pending_phase` in run-state; `cmdCheckpoint` uses it instead of `getNextPhase(current_phase)` |
+| 5 | **`phases_completed` not tracking correctly** | `wf finalize` warned "only 2/4 phases recorded" despite all 4 phases running | ✓ Fixed: same root cause as #4 — `pending_phase` ensures checkpoint advances to the correct phase; completing phase is captured before state mutation |
+| 6 | **Post-DENY recovery requires manual `run-state.json` editing** | After rollback set `status=blocked`, Claude had to directly edit the JSON to restore `status=checkpoint_pending` and correct `current_phase` | ✓ Fixed: `wf replan --phase <phase>` resets `status=checkpoint_pending` and sets `pending_phase` from `blocked` state |
+
+---
+
+## Known Issues (to fix)
+
+These bugs surfaced during real usage. Fix before v1.2.
+
+| # | Issue | Root Cause | Fix |
+|---|---|---|---|
+| 1 | **Cross-project `--run-dir` required everywhere** | `wf` commands default to `runs/current` symlink inside the workflow repo. When invoked from a different project, that symlink doesn't exist — every command fails unless `--run-dir <abs-path>` is passed explicitly. | ✓ Fixed: Rule 6 in both SKILL.md copies now includes a concrete `RUN_DIR=` capture example so Claude stores the path immediately after init |
+| 2 | **Phase summary schema not known to agents** | Agents write phase-summary JSON without knowing the exact object shapes required (`open_risks`, `unresolved_decisions`, `connector_gaps`, `token_summary`). This causes multiple schema validation failures and fix rounds. | ✓ Already resolved: phase-summary JSON shape is embedded in SKILL.md and both phase templates |
+| 3 | **`wf validate <schema> <path>` resolves `run-state.json` from CWD** | The validator reads `run-state.json` from a relative path instead of from the run dir, so it fails when invoked from outside the workflow repo directory. | ✓ Already resolved: validator.ts has no CWD run-state.json dependency |
+
+---
+
 ## Remaining / Deferred
 
 | Item | Notes |

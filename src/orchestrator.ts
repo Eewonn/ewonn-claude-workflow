@@ -4,11 +4,12 @@
  * Usage: npx tsx src/orchestrator.ts <command> [options]
  *
  * Commands:
- *   init       --profile <p> [--run-id <id>]
+ *   init       --profile <p> [--run-id <id>] [--run-dir <path>]
  *   status     [--run-dir <dir>]
  *   transition --to-phase <phase> [--run-dir <dir>]
  *   checkpoint --approved <true|false> --reason <text> [--run-dir <dir>]
  *   rollback   --reason <text> [--run-dir <dir>]
+ *   replan     --phase <phase> [--run-dir <dir>]
  *   compress   --phase <phase> --tokens-used <n> [--run-dir <dir>]
  *   finalize   --status <completed|failed> [--run-dir <dir>]
  */
@@ -129,7 +130,14 @@ async function cmdInit(args: Record<string, string>): Promise<void> {
   const profile = (args['profile'] ?? cfg.default_profile) as ValidationProfile;
   const runId = args['run-id'] ?? generateRunId();
 
-  const runDir = await ensureRunDir(runId, cfg.runs_dir);
+  let runDir: string;
+  if (args['run-dir']) {
+    // Place run artifacts in the caller-specified directory (e.g. $PWD/.workflow/<run-id>)
+    runDir = resolve(join(args['run-dir'], runId));
+    await mkdir(join(runDir, 'snapshots'), { recursive: true });
+  } else {
+    runDir = await ensureRunDir(runId, cfg.runs_dir);
+  }
   const now = new Date().toISOString();
 
   // Copy all templates into run dir
@@ -142,7 +150,7 @@ async function cmdInit(args: Record<string, string>): Promise<void> {
   ];
 
   for (const [tmpl, dest] of templates) {
-    await copyTemplate(tmpl, join(runDir, dest));
+    await copyTemplate(tmpl!, join(runDir, dest!));
   }
 
   // Write initial run-state
@@ -150,6 +158,7 @@ async function cmdInit(args: Record<string, string>): Promise<void> {
     run_id: runId,
     status: 'initializing',
     current_phase: null,
+    pending_phase: null,
     profile,
     phases_completed: [],
     created_at: now,
@@ -179,7 +188,7 @@ async function cmdInit(args: Record<string, string>): Promise<void> {
   try { await unlink(currentLink); } catch { /* ignore */ }
   await rename(tmpLink, currentLink);
 
-  console.log(`INIT: runs/${runId}/ created with profile=${profile}`);
+  console.log(`INIT: ${runDir} created with profile=${profile}`);
   console.log(`  run_dir: ${runDir}`);
   console.log(`  runs/current → ${runDir}`);
 }
@@ -246,6 +255,7 @@ async function cmdTransition(args: Record<string, string>): Promise<void> {
 
   const now = new Date().toISOString();
   state.status = 'checkpoint_pending';
+  state.pending_phase = toPhase;
   state.updated_at = now;
   await writeArtifact(statePath, 'run-state', state);
 
@@ -281,28 +291,34 @@ async function cmdCheckpoint(args: Record<string, string>): Promise<void> {
   }
 
   const now = new Date().toISOString();
-  const nextPhase = getNextPhase(state.current_phase);
+  // Use pending_phase stored by `transition`, falling back to computed next phase
+  const targetPhase: Phase | null = state.pending_phase ?? getNextPhase(state.current_phase);
 
   if (approved) {
-    if (nextPhase === null && state.current_phase === 'validate') {
+    const completingPhase = state.current_phase;
+
+    if (targetPhase === null && state.current_phase === 'validate') {
       // All phases done — mark validate complete and auto-finalize
-      if (state.current_phase && !state.phases_completed.includes(state.current_phase)) {
-        state.phases_completed.push(state.current_phase);
+      if (completingPhase && !state.phases_completed.includes(completingPhase)) {
+        state.phases_completed.push(completingPhase);
       }
+      state.pending_phase = null;
       state.status = 'completed';
       console.log('CHECKPOINT: approved — all phases complete, run finalized');
-    } else if (nextPhase) {
-      // Mark current phase complete before advancing
-      if (state.current_phase && !state.phases_completed.includes(state.current_phase)) {
-        state.phases_completed.push(state.current_phase);
+    } else if (targetPhase) {
+      // Mark completing phase done, advance to target
+      if (completingPhase && !state.phases_completed.includes(completingPhase)) {
+        state.phases_completed.push(completingPhase);
       }
-      state.current_phase = nextPhase;
+      state.current_phase = targetPhase;
+      state.pending_phase = null;
       state.status = 'running';
       // Reset phase token counter on new phase
       state.token_usage.phase_tokens = 0;
       state.token_usage.last_threshold_triggered = null;
-      console.log(`CHECKPOINT: approved — advancing to phase "${nextPhase}"`);
+      console.log(`CHECKPOINT: approved — advancing to phase "${targetPhase}"`);
     } else {
+      state.pending_phase = null;
       state.status = 'running';
       console.log('CHECKPOINT: approved — continuing current phase');
     }
@@ -555,6 +571,38 @@ async function cmdList(_args: Record<string, string>): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Command: replan
+// ---------------------------------------------------------------------------
+
+async function cmdReplan(args: Record<string, string>): Promise<void> {
+  const phase = args['phase'] as Phase | undefined;
+  if (!phase || !PHASE_ORDER.includes(phase)) {
+    throw new Error(`--phase must be one of: ${PHASE_ORDER.join(', ')}`);
+  }
+
+  const runDir = await resolveRunDir(args['run-dir']);
+  const statePath = join(runDir, 'run-state.json');
+  const state = await readArtifact<RunState>(statePath);
+
+  if (state.status !== 'blocked') {
+    throw new Error(
+      `Cannot replan: run status is "${state.status}", expected "blocked"`,
+    );
+  }
+
+  const now = new Date().toISOString();
+  state.status = 'checkpoint_pending';
+  state.pending_phase = phase;
+  state.updated_at = now;
+  await writeArtifact(statePath, 'run-state', state);
+
+  console.log(`REPLAN: status reset to "checkpoint_pending"`);
+  console.log(`  Pending phase:   ${phase}`);
+  console.log(`  Next: revise your plan, then run:`);
+  console.log(`    wf checkpoint --approved true --reason "<reason>" --run-dir ${runDir}`);
+}
+
+// ---------------------------------------------------------------------------
 // Command: abort
 // ---------------------------------------------------------------------------
 
@@ -619,7 +667,7 @@ async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   if (argv.length === 0) {
     console.error('Usage: npx tsx src/orchestrator.ts <command> [options]');
-    console.error('Commands: init, status, list, transition, checkpoint, rollback, compress, finalize, abort');
+    console.error('Commands: init, status, list, transition, checkpoint, rollback, replan, compress, finalize, abort');
     process.exit(2);
   }
 
@@ -633,12 +681,13 @@ async function main(): Promise<void> {
       case 'transition': await cmdTransition(args); break;
       case 'checkpoint': await cmdCheckpoint(args); break;
       case 'rollback':   await cmdRollback(args); break;
+      case 'replan':     await cmdReplan(args); break;
       case 'compress':   await cmdCompress(args); break;
       case 'finalize':   await cmdFinalize(args); break;
       case 'abort':      await cmdAbort(args); break;
       default:
         console.error(`Unknown command: ${command}`);
-        console.error('Valid commands: init, status, list, transition, checkpoint, rollback, compress, finalize, abort');
+        console.error('Valid commands: init, status, list, transition, checkpoint, rollback, replan, compress, finalize, abort');
         process.exit(2);
     }
   } catch (err) {

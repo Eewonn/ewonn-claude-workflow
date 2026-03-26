@@ -13,6 +13,9 @@
 
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const AjvClass = (Ajv as any).default ?? Ajv;
+const addFormatsFunc = (addFormats as any).default ?? addFormats;
 import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -41,8 +44,8 @@ export interface AjvValidator {
  * Create an AJV validator instance with all 8 schemas loaded from `schemaDir`.
  */
 export function createValidator(schemaDir: string): AjvValidator {
-  const ajv = new Ajv({ allErrors: true, strict: false });
-  addFormats(ajv);
+  const ajv = new AjvClass({ allErrors: true, strict: false });
+  addFormatsFunc(ajv);
 
   // Load all schema files from the schema directory
   const files = readdirSync(schemaDir).filter((f) => f.endsWith('.schema.json'));
@@ -77,9 +80,16 @@ export function createValidator(schemaDir: string): AjvValidator {
 // ---------------------------------------------------------------------------
 
 async function main(): Promise<void> {
-  const args = process.argv.slice(2);
+  // Strip optional --run-dir <path> flag (accepted for CLI consistency; schemas always load from
+  // the workflow project's memory/schema/ dir via import.meta.url, so --run-dir is a no-op here)
+  const rawArgs = process.argv.slice(2);
+  const runDirIdx = rawArgs.indexOf('--run-dir');
+  const args = runDirIdx !== -1
+    ? [...rawArgs.slice(0, runDirIdx), ...rawArgs.slice(runDirIdx + 2)]
+    : rawArgs;
+
   if (args.length < 2) {
-    console.error('Usage: npx tsx src/validator.ts <schema-name> <file-path>');
+    console.error('Usage: npx tsx src/validator.ts [--run-dir <path>] <schema-name> <file-path>');
     console.error(`Available schemas: ${SCHEMA_NAMES.join(', ')}`);
     process.exit(2);
   }

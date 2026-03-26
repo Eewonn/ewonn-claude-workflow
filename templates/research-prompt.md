@@ -59,13 +59,30 @@ All connectors are non-critical for this phase. If a connector fails:
 
 Before signaling phase complete, write the following artifacts:
 
-**`phase-summary-research.json`** (required):
-- `summary_id`: generate a unique ID
-- `outcomes`: at least one outcome string describing what was learned (non-empty)
-- `open_risks`: all risks discovered during research
-- `unresolved_decisions`: decisions that must be made before planning
-- `connector_gaps`: any connector failures with error class and affected findings
-- `token_summary.tokens_used`: approximate token count for this phase
+**`phase-summary-research.json`** (required) — exact shape, no extra fields:
+
+```json
+{
+  "summary_id": "research-<run-id>",
+  "run_id": "<run-id>",
+  "phase": "research",
+  "status": "completed",
+  "created_at": "2026-01-01T00:00:00.000Z",
+  "outcomes": ["at least one string"],
+  "open_risks": [
+    { "id": "R1", "description": "...", "severity": "high|medium|low" }
+  ],
+  "unresolved_decisions": [
+    { "id": "D1", "description": "...", "options": ["opt1"] }
+  ],
+  "connector_gaps": [
+    { "connector": "...", "operation": "...", "error_class": "auth|rate_limit|timeout|missing_resource|unknown", "affected_findings": "..." }
+  ],
+  "token_summary": { "tokens_used": 12345, "peak_threshold_hit": null }
+}
+```
+
+`open_risks`, `unresolved_decisions`, `connector_gaps` are arrays of **objects**, never strings. Use `[]` for empty arrays.
 
 **`phase-summary-research.md`** (required):
 - Executive summary (2–4 sentences)

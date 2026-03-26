@@ -58,11 +58,28 @@ If `has_cycles: true`: reorder or split tasks to eliminate cycles before writing
   npx tsx src/validator.ts task-state <run-dir>/task-state.json
   ```
 
-**`phase-summary-plan.json`** (required):
-- `outcomes`: at least one outcome describing what the plan covers
-- `open_risks`: implementation risks identified during planning
-- `unresolved_decisions`: decisions that must be resolved before or during implementation
-- `token_summary.tokens_used`: approximate token count
+**`phase-summary-plan.json`** (required) — exact shape, no extra fields:
+
+```json
+{
+  "summary_id": "plan-<run-id>",
+  "run_id": "<run-id>",
+  "phase": "plan",
+  "status": "completed",
+  "created_at": "2026-01-01T00:00:00.000Z",
+  "outcomes": ["at least one string"],
+  "open_risks": [
+    { "id": "R1", "description": "...", "severity": "high|medium|low" }
+  ],
+  "unresolved_decisions": [
+    { "id": "D1", "description": "...", "options": ["opt1"] }
+  ],
+  "connector_gaps": [],
+  "token_summary": { "tokens_used": 12345, "peak_threshold_hit": null }
+}
+```
+
+`open_risks`, `unresolved_decisions`, `connector_gaps` are arrays of **objects**, never strings. Use `[]` for empty arrays.
 
 **`phase-summary-plan.md`** (required):
 - Plan overview (2–4 sentences)

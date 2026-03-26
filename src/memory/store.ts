@@ -90,7 +90,7 @@ export async function writeArtifact<T>(
 
   if (schemaName === 'improvement-deployment') {
     const dep = data as Record<string, number>;
-    if (dep['actions_applied'] + dep['actions_failed'] > dep['actions_approved']) {
+    if ((dep['actions_applied'] ?? 0) + (dep['actions_failed'] ?? 0) > (dep['actions_approved'] ?? 0)) {
       throw new Error(
         `Semantic validation failed: improvement-deployment actions_applied (${dep['actions_applied']}) + actions_failed (${dep['actions_failed']}) > actions_approved (${dep['actions_approved']})`,
       );

@@ -1,0 +1,15 @@
+{
+  "summary_id": "",
+  "run_id": "",
+  "phase": "research",
+  "status": "completed",
+  "outcomes": ["(fill in outcomes — at least one required)"],
+  "open_risks": [],
+  "unresolved_decisions": [],
+  "connector_gaps": [],
+  "token_summary": {
+    "tokens_used": 0,
+    "peak_threshold_hit": null
+  },
+  "created_at": ""
+}

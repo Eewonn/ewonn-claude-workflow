@@ -21,7 +21,7 @@ export type RunStatus =
 
 export type Phase = 'research' | 'plan' | 'implement' | 'validate';
 
-export type ValidationProfile = 'strict' | 'balanced' | 'fast';
+export type ValidationProfile = 'strict' | 'balanced' | 'fast' | 'micro';
 
 export type ValidationVerdict = 'pass' | 'pass_with_risks' | 'fail';
 
@@ -101,6 +101,7 @@ export interface RunState {
   run_id: string;
   status: RunStatus;
   current_phase: Phase | null;
+  pending_phase?: Phase | null;  // set by transition, consumed by checkpoint
   profile: ValidationProfile;
   phases_completed: Phase[];
   created_at: string;

@@ -33,7 +33,7 @@
     },
     "profile": {
       "type": "string",
-      "enum": ["strict", "balanced", "fast"]
+      "enum": ["strict", "balanced", "fast", "micro"]
     },
     "phases_completed": {
       "type": "array",
@@ -94,6 +94,13 @@
         },
         { "type": "null" }
       ]
+    },
+    "pending_phase": {
+      "oneOf": [
+        { "type": "string", "enum": ["research", "plan", "implement", "validate"] },
+        { "type": "null" }
+      ],
+      "description": "Target phase set by transition, consumed by checkpoint"
     },
     "run_dir": {
       "type": "string",

@@ -1,418 +1,195 @@
 # Workflow Orchestration Skill
 
-Enforce the Research → Plan → Implement → Validate pipeline with persistent memory, human gates, and token budget management.
+Enforce Research → Plan → Implement → Validate with persistent memory, subagent optimization, and human checkpoint gates.
 
-## Usage
+## MANDATORY RULES — enforce always, no shortcuts
 
-```
-/workflow <subcommand> [arguments]
-```
-
----
-
-## Subcommands
-
-### `/workflow quick`
-
-Zero-ceremony mode for simple tasks. No run directory, no JSON artifacts, no checkpoint gates.
-
-**When to use:** single-file fixes, minor edits, quick explorations — anything describable in one sentence, implementable in under 15 minutes.
-
-1. Ask: "What's the task?" if not already described.
-2. Read the relevant files directly (Read, Grep, Glob as needed).
-3. Make the changes.
-4. Summarize in 3–5 bullets: what changed, why, any caveats.
-5. Offer to commit.
-
-**Escalation:** if scope expands beyond 3 files or a design decision is needed, stop and suggest `/workflow start` or `/workflow start --mode lite`.
+1. **Init first.** Run `wf init` before any research, reads, or file changes. No exceptions.
+2. **Haiku for file inventory.** Always spawn a Haiku agent to enumerate relevant files before reading them. Never guess or enumerate manually.
+3. **Subagent threshold (hard rule).**
+   - < 10 files, single subsystem → read directly, no subagents
+   - ≥ 2 subsystems OR > 20 file reads → spawn `feature-dev:code-explorer` + `general-purpose` (git context) in parallel with `run_in_background: true`
+4. **Hard stop at checkpoints.** After presenting a checkpoint block, take zero action — no reads, no writes, no tool calls — until the user explicitly types APPROVE or DENY.
+5. **Write and validate before transitioning.** Never call `wf transition` without the phase-summary JSON written and schema-validated first.
+6. **Always pass `--run-dir` after init.** After `wf init`, capture the run directory path from the init output and store it in a variable for the session:
+   ```
+   # Init output contains:  run_dir: /abs/path/to/.workflow/<run-id>
+   # Store it immediately:
+   RUN_DIR="/abs/path/to/.workflow/<run-id>"
+   ```
+   Pass `--run-dir $RUN_DIR` to every subsequent `wf` command: `transition`, `checkpoint`, `replan`, `compress`, `finalize`, `validate`. Never rely on the `runs/current` symlink — it lives in the workflow project, not in the target project's directory.
 
 ---
 
-### `/workflow start [--profile <p>] [--run-id <id>] [--mode <mode>]`
+## CLI — `wf` (works from any directory)
 
-Begins a new workflow run.
+```bash
+wf init --profile <micro|balanced|strict|fast> --run-dir "$PWD/.workflow"
+wf status [--run-dir <path>]
+wf transition --to-phase <plan|implement|validate> [--run-dir <path>]
+wf checkpoint --approved <true|false> --reason "<text>" [--run-dir <path>]
+wf compress --phase <phase> --tokens-used <n> [--run-dir <path>]
+wf finalize --status <completed|failed> [--run-dir <path>]
+wf replan --phase <research|plan|implement|validate> [--run-dir <path>]
+wf list
+wf abort [--reason "<text>"]
+wf validate <schema> <file>
+```
 
-**Modes:** `full` (default), `bugfix`, `lite`
-**Profiles:** `strict`, `balanced` (default), `fast` — bugfix/lite use `micro` profile
+**Always pass `--run-dir "$PWD/.workflow"` to `init`.** This puts run artifacts in the target project, not the workflow project. Add `.workflow/` to the project's `.gitignore` if it isn't already.
 
-#### Step 0: Complexity assessment (skip if `--mode` explicitly provided)
+---
 
-Ask "What's the task?" then classify:
+## /workflow start [--mode <mode>]
 
-| Signal | Recommendation |
+### Step 0 — Mode selection (skip if --mode already provided)
+
+Ask: "What's the task?" then:
+
+| Signal | Mode |
 |---|---|
-| Single-file fix, no design decisions | `/workflow quick` |
-| Known bug, 1–3 files | `--mode bugfix` |
-| Small feature, 1–5 files, clear scope | `--mode lite` |
-| Multi-file, uncertain scope | Full pipeline |
+| Single file, < 15 min, no design decisions | `quick` |
+| Known bug, 1–3 files | `bugfix` |
+| Small feature, ≤ 5 files, clear scope | `lite` |
+| Multi-file, uncertain scope, or design decisions needed | `full` |
 
-State recommendation and wait for user to confirm before proceeding.
-
-#### Full pipeline:
-
-1. Determine profile (default: `balanced`).
-2. Run: `npx tsx src/orchestrator.ts init --profile <profile> [--run-id <id>]`
-3. Read `agents/research-agent.md`. Read and fill `templates/research-prompt.md`.
-4. Set run status to `running`.
-5. Execute research — always run Haiku pre-tasks first to enumerate the relevant file list, then dispatch:
-   - **Simple tasks** (< 10 files, single subsystem): Haiku inventory → read files directly. No sub-agents.
-   - **Complex tasks** (≥ 2 subsystems or > 20 file reads): after Haiku pre-tasks, spawn parallel sub-agents:
-     - Subagent A (`feature-dev:code-explorer`): trace execution paths, map affected components. Provide Haiku file list as scope.
-     - Subagent B (`general-purpose`): git/GitHub context
-     - Subagent C (`general-purpose`, optional): context7 docs only if library API must be verified
-     - Launch A + B with `run_in_background: true`. Merge findings after all complete.
-6. When research complete, run `/workflow transition --to plan`.
-
-#### Bugfix mode (`--mode bugfix`): Implement → Validate
-
-Profile: `micro`. No Research, no Plan.
-
-1. `npx tsx src/orchestrator.ts init --profile micro`
-2. Fix the bug. Write `phase-summary-implement.json` (files changed, root cause, fix applied).
-3. `/workflow transition --to validate`. Validate. Finalize.
-
-Memory: `run-state.json`, `phase-summary-implement.json`, `phase-summary-validate.json` only.
-
-#### Lite mode (`--mode lite`): Research+Plan (combined) → Implement → Validate
-
-Profile: `micro`. Research and Plan merged into one pass.
-
-1. `npx tsx src/orchestrator.ts init --profile micro`
-2. Spawn the `research-planner` agent (`.claude/agents/research-planner.md`):
-   - It runs Haiku file inventory, reads focused files, produces ≤5-task plan in one pass
-   - Produces `phase-summary-plan.json` (with `combined_research_plan: true`) + `task-state.json`
-   - If it escalates (scope > 5 tasks or > 10 files), upgrade to `fast` full pipeline
-3. Implement → Validate. Two checkpoint gates.
-
-Memory: run-state, phase-summary-plan, task-state, phase-summary-implement, phase-summary-validate.
+State the recommendation and wait for confirmation before proceeding.
 
 ---
 
-### `/workflow transition --to <phase>`
+### `quick` mode — no run directory, no artifacts
 
-Enforces the 5-step transition protocol before advancing to the next phase.
+1. Read relevant files directly.
+2. Make the changes.
+3. Summarize in 3–5 bullets: what changed, why, any caveats.
+4. Offer to commit.
 
-**Phase must be one of:** `plan`, `implement`, `validate`
-
-**5-step transition protocol (mandatory — do not skip any step):**
-
-1. **Summarize** — Ensure `phase-summary-<current_phase>.json` is written and validated:
-   ```bash
-   npx tsx src/validator.ts phase-summary <run-dir>/phase-summary-<phase>.json
-   ```
-
-2. **Persist** — Ensure `run-state.json`, `decision-log.json`, and `task-state.json` are written and validated.
-
-3. **Signal transition** — Run:
-   ```bash
-   npx tsx src/orchestrator.ts transition --to-phase <phase>
-   ```
-   This sets status to `checkpoint_pending` and creates a snapshot.
-
-4. **Clear active context** — Do not carry forward the current phase's working context. Only load the retrieval context pack for the new phase.
-
-5. **Human checkpoint** — Present `templates/human-checkpoint-prompt.md` filled with:
-   - `run_id`, `phase_completed`, `verdict` (from phase summary), `open_risks_count`, `key_outcomes_list`, `next_phase`
-
-   Wait for human to respond with `APPROVE: <reason>` or `DENY: <reason>`, then run:
-   ```bash
-   npx tsx src/orchestrator.ts checkpoint --approved <true|false> --reason "<reason>"
-   ```
-
-**On APPROVE:** Load the next phase's agent contract and prompt template. Reload minimal context pack (see Memory Artifact Reference). Begin the next phase.
-
-**On DENY:** The orchestrator triggers rollback automatically. Run status becomes `blocked`. Read `rollback-report.json` and report to user.
+**Escalate** to `lite` or `full` if scope expands beyond 3 files or a design decision appears.
 
 ---
 
-### `/workflow status`
+### `bugfix` mode — Implement → Validate
 
-Display current run state.
+1. `wf init --profile micro --run-dir "$PWD/.workflow"`
+2. Fix the bug.
+3. Write `$PWD/.workflow/<run-id>/phase-summary-implement.json` → validate → transition → validate phase → finalize.
 
-```bash
-npx tsx src/orchestrator.ts status
+---
+
+### `lite` mode — Research+Plan combined → Implement → Validate
+
+1. `wf init --profile micro --run-dir "$PWD/.workflow"`
+2. Spawn `research-planner` agent: Haiku inventory → focused reads → ≤5-task plan in one pass.
+   - Produces `phase-summary-plan.json` + `task-state.json`
+   - If scope exceeds 5 tasks or 10 files, escalate to `full`
+3. **CHECKPOINT** (research+plan → implement)
+4. Implement tasks.
+5. **CHECKPOINT** (implement → validate)
+6. Validate. Finalize.
+
+---
+
+### `full` mode — Research → Plan → Implement → Validate
+
+1. `wf init --profile balanced --run-dir "$PWD/.workflow"`
+2. Apply subagent threshold rule (MANDATORY RULE 3) to determine dispatch strategy.
+3. Execute research. Write `phase-summary-research.json` → validate.
+4. **CHECKPOINT** (research → plan)
+5. Planner agent: produce `phase-summary-plan.json` + `task-state.json` → validate.
+6. **CHECKPOINT** (plan → implement)
+7. Implementer: execute tasks batch-by-batch. Write `phase-summary-implement.json` → validate.
+8. **CHECKPOINT** (implement → validate)
+9. Validator: produce final verdict. Write `phase-summary-validate.json` → validate.
+10. **CHECKPOINT** (validate → done) → finalize.
+
+---
+
+## Checkpoint Protocol — HARD STOP
+
+At every phase transition:
+
+1. Write phase-summary JSON: `wf validate phase-summary <run-dir>/phase-summary-<phase>.json`
+2. Persist state: ensure `run-state.json`, `decision-log.json`, `task-state.json` are written and validated.
+3. Signal transition: `wf transition --to-phase <next>`
+4. Present this block:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CHECKPOINT: <current_phase> complete
+Run: <run_id>
+Next phase: <next_phase>
+Key outcomes: <bullet list>
+Open risks: <count>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Reply APPROVE or DENY (with a reason).
 ```
 
-Also show the current token budget status:
-```bash
-npx tsx src/orchestrator.ts status [--run-dir <dir>]
-```
+5. **STOP. Take no action until the user replies.**
+6. On APPROVE: `wf checkpoint --approved true --reason "<reason>"` → load next phase context → proceed.
+7. On DENY: `wf checkpoint --approved false --reason "<reason>"` → read rollback-report.json → report to user.
 
 ---
 
-### `/workflow compress`
+## Token Budget
 
-Triggered when phase token usage reaches ~60% of `phase_max`.
-
-1. Generate a micro-summary of the current phase's working context. Write it to:
-   ```
-   <run-dir>/micro-summary-<phase>-<timestamp>.md
-   ```
-   The micro-summary must capture the essential state: what has been done, what decisions were made, what remains.
-
-2. Run:
-   ```bash
-   npx tsx src/orchestrator.ts compress --phase <current_phase> --tokens-used <n>
-   ```
-   Note: The orchestrator checks that the micro-summary file exists before updating state. It will exit with an error if the file is missing — generate the micro-summary first.
-
-3. Discard stale context. Continue with only:
-   - The micro-summary
-   - Active task scope
-   - Unresolved risks and decisions
-   - Profile gate rules
-
----
-
-### `/workflow checkpoint --approved <true|false> --reason "<text>"`
-
-Process a human checkpoint decision.
-
-```bash
-npx tsx src/orchestrator.ts checkpoint --approved <true|false> --reason "<text>"
-```
-
-- **approved=true**: Orchestrator advances to next phase, sets `status=running`.
-- **approved=false**: Orchestrator triggers rollback, sets `status=blocked`.
-
----
-
-### `/workflow validate`
-
-Run schema validation against all current run artifacts.
-
-```bash
-npx tsx src/validator.ts run-state <run-dir>/run-state.json
-npx tsx src/validator.ts phase-summary <run-dir>/phase-summary-research.json
-npx tsx src/validator.ts phase-summary <run-dir>/phase-summary-plan.json
-npx tsx src/validator.ts phase-summary <run-dir>/phase-summary-implement.json
-npx tsx src/validator.ts phase-summary <run-dir>/phase-summary-validate.json
-npx tsx src/validator.ts task-state <run-dir>/task-state.json
-npx tsx src/validator.ts decision-log <run-dir>/decision-log.json
-npx tsx src/validator.ts retrieval-index <run-dir>/retrieval-index.json
-```
-
-Only validate files that exist. Report any schema violations. If violations are found, update `run-state.json` with the issues in `active_risks`.
-
----
-
-### `/workflow list`
-
-List all runs with their status.
-
-```bash
-npx tsx src/orchestrator.ts list
-```
-
----
-
-### `/workflow abort [--reason "<text>"]`
-
-Cancel an in-progress run immediately. Sets status to `failed` and preserves all run data.
-
-```bash
-npx tsx src/orchestrator.ts abort --reason "<reason>"
-```
-
-Use when a run is stuck, the task changed, or you want to start fresh without a full finalize flow.
-
----
-
-### `/workflow retrospective`
-
-Generate per-run improvement artifacts after run completion.
-
-1. Read all phase summaries from the run directory.
-2. Read `run-state.json` for final status, token usage, and checkpoint history.
-3. Generate `run-retrospective.json` in `eval/`:
-   - Validate before writing:
-     ```bash
-     npx tsx src/validator.ts run-retrospective eval/retro-<run-id>.json
-     ```
-4. Generate `eval/retro-<run-id>.md` (human-readable companion):
-   - Executive summary
-   - Top 3 blockers
-   - Top 3 improvements for next run
-   - Confidence note for recommendations
-
-5. Finalize the run:
-   ```bash
-   npx tsx src/orchestrator.ts finalize --status completed
-   ```
-
----
-
-### `/workflow weekly-synthesis`
-
-Aggregate retrospectives from `eval/` into a weekly synthesis report.
-
-1. Scan `eval/` for all `retro-*.json` files not yet included in a synthesis.
-2. Load global config for `weekly_synthesis.min_runs_required`.
-3. If fewer runs than `min_runs_required` exist, report and stop.
-4. Aggregate across all unprocessed retrospectives:
-   - Cluster recurring blockers
-   - Compare outcomes by profile
-   - Identify token efficiency trends
-   - Propose top prompt and skill changes
-5. Generate `eval/weekly-synthesis-<window_start>.json`:
-   - Validate before writing:
-     ```bash
-     npx tsx src/validator.ts weekly-synthesis eval/weekly-synthesis-<window_start>.json
-     ```
-6. Generate `eval/weekly-synthesis-<window_start>.md`:
-   - Summary of trends
-   - Decisions made
-   - Rollout plan for approved_actions
-
----
-
-## Phase Transition Protocol (Reference)
-
-Every transition must complete all 5 steps in order:
-
-| Step | Action | CLI |
-|---|---|---|
-| 1 | Summarize phase outcomes | Write + validate phase-summary JSON |
-| 2 | Persist state, risks, decisions | Write + validate run-state, decision-log, task-state |
-| 3 | Signal transition | `orchestrator.ts transition --to-phase <p>` |
-| 4 | Clear active context | Discard working context; reload only minimal context pack |
-| 5 | Human checkpoint | Present checkpoint prompt; run `orchestrator.ts checkpoint` |
-
-**Never advance to the next phase without completing all 5 steps.**
-
----
-
-## Token Budget Actions
-
-| Threshold | % of phase_max | Required Action |
-|---|---|---|
-| warn | 40% | Emit `[TOKEN]` warning, continue |
-| compress | 60% | Write micro-summary → run `/workflow compress` → trim context |
-| emergency | 80% | Stop phase immediately → request human checkpoint before continuing |
-
-Token limits by profile:
-- `strict` / `balanced`: phase_max = 80,000, run_max = 320,000
-- `fast`: phase_max = 40,000 (override in profile config)
-
-Token estimates are approximate (character/4 heuristic in retrieval index).
-
----
-
-## Error Handling: Connector Failures
-
-| Error Class | Action |
+| Threshold | Action |
 |---|---|
-| `auth` | Log to run events. Likely needs human fix. If critical → checkpoint. |
-| `rate_limit` | Log. No auto-retry. If non-critical → continue with reduced confidence. |
-| `timeout` | Log. Retry once manually. If still fails → degrade or checkpoint. |
-| `missing_resource` | Log as gap. Continue with available evidence. |
-| `unknown` | Log. Treat as critical if connector is in `critical_connectors_by_phase`. |
-
-Critical connectors by phase (from `configs/global.json`):
-- Research: filesystem
-- Plan: filesystem
-- Implement: filesystem, git
-- Validate: filesystem
-
-Failure response:
-1. Classify the error
-2. Log to `run-state.json → active_risks`
-3. Add `connector_gaps` entry in current phase summary
-4. If non-critical: mark affected findings `confidence: low`, continue
-5. If critical: stop phase, trigger human checkpoint
+| 40% of phase_max | Warn `[TOKEN 40%]`, continue |
+| 60% | Write micro-summary → `wf compress --phase <p> --tokens-used <n>` → trim context |
+| 80% | STOP → present checkpoint before continuing |
 
 ---
 
-## Memory Artifact Reference
+## Session Resume
 
-| Artifact | Schema | Write Rule | Location |
-|---|---|---|---|
-| `run-state.json` | `run-state` | Every state change — validated on every write | `<run-dir>/` |
-| `phase-summary-<phase>.json` | `phase-summary` | At phase completion — outcomes must be non-empty | `<run-dir>/` |
-| `phase-summary-<phase>.md` | none | Companion markdown, write alongside JSON | `<run-dir>/` |
-| `decision-log.json` | `decision-log` | When any decision is added or resolved | `<run-dir>/` |
-| `task-state.json` | `task-state` | When tasks are created or updated | `<run-dir>/` |
-| `retrieval-index.json` | `retrieval-index` | When artifacts are added; Orchestrator sets relevance_score | `<run-dir>/` |
-| `run-retrospective.json` | `run-retrospective` | After run finalization | `eval/` |
-| `weekly-synthesis.json` | `weekly-synthesis` | After weekly-synthesis subcommand | `eval/` |
-
-All JSON artifacts are validated with `src/validator.ts` before writing.
+At `/workflow start`, first check if `$PWD/.workflow/current` exists:
+- If yes: run `wf status` and ask the user whether to resume or start fresh.
+- If no: proceed with mode selection.
 
 ---
 
-## Haiku Micro-Agent Pattern
+## Phase Summary JSON — Required Shape
 
-Any coordinator agent (Research, Planner, Validator, ResearchPlanner) may spawn a Haiku micro-agent for narrow, bounded tasks:
+When writing any `phase-summary-<phase>.json`, it **must** match this structure exactly. No extra fields allowed (`additionalProperties: false`).
 
-```
-Agent(subagent_type: "general-purpose", model: "haiku",
-      prompt: "<single-purpose prompt with explicit output format>")
+```json
+{
+  "summary_id": "<phase>-<run-id>",
+  "run_id": "<run-id>",
+  "phase": "research|plan|implement|validate",
+  "status": "completed|blocked|failed",
+  "created_at": "2026-01-01T00:00:00.000Z",
+  "outcomes": ["at least one string"],
+  "open_risks": [
+    { "id": "R1", "description": "...", "severity": "high|medium|low" }
+  ],
+  "unresolved_decisions": [
+    { "id": "D1", "description": "...", "options": ["opt1", "opt2"] }
+  ],
+  "connector_gaps": [
+    { "connector": "...", "operation": "...", "error_class": "auth|rate_limit|timeout|missing_resource|unknown", "affected_findings": "..." }
+  ],
+  "token_summary": {
+    "tokens_used": 12345,
+    "peak_threshold_hit": null
+  }
+}
 ```
 
-**Use when ALL are true:**
-- **Bounded**: clear input (1–few files or data structures) and explicit output format
-- **Non-reasoning**: no design judgment, risk assessment, or synthesis
-- **Enumerable**: file inventories, pattern counting, dependency extraction, data transformation
-
-**Common uses per phase:**
-| Phase | Haiku task |
-|---|---|
-| Research | File inventory before spawning code-explorer |
-| Research | Import extraction, symbol listing |
-| Plan | Dependency cycle detection on task list |
-| Validate | Count tasks by status in task-state.json |
-| Validate | Find resolved decisions missing `resolved_at` |
-| Lite (research-planner) | File inventory before direct reads |
-
-**Never use Haiku for**: confidence assessment, risk identification, synthesis across sources, tasks requiring run-state or profile config context.
+`open_risks`, `unresolved_decisions`, `connector_gaps` must be arrays of objects — not strings. Use `[]` for empty arrays. `peak_threshold_hit` is `null` or one of `"warn"`, `"compress"`, `"emergency"`.
 
 ---
 
-## Confidence Rubric
+## Other subcommands
 
-This is the **authoritative** definition. All agent contracts reference this section.
+**`/workflow status`** — `wf status`
 
-| Level | Meaning |
-|---|---|
-| `high` | Verified by direct evidence or deterministic checks (e.g., read the file, ran the command, confirmed the output) |
-| `medium` | Partially verified; minor assumptions remain (e.g., inferred from similar code patterns, partially read) |
-| `low` | Inferred or incomplete evidence (e.g., connector failure prevented full verification, assumption not confirmed) |
+**`/workflow abort`** — `wf abort --reason "<reason>"`
 
-**Assignment rules:**
-- Phase agents (Research, Planner, Implementer, Validator) set `confidence` on every artifact they produce.
-- The Orchestrator sets `relevance_score` using the formula in `src/memory/retrieval.ts`.
-- Phase agents must never set `relevance_score`.
+**`wf replan --phase <phase>`** — After a DENY/rollback sets `status=blocked`, resets state to `checkpoint_pending` targeting the given phase. Allows re-entering the checkpoint flow without manually editing `run-state.json`. Follow with `wf checkpoint --approved true --reason "<reason>"` once a revised plan is ready.
 
-When a connector failure affects a finding: downgrade confidence by one level (high → medium, medium → low, low stays low).
+**`/workflow list`** — `wf list`
 
----
+**`/workflow retrospective`** — Read all phase summaries → write `eval/retro-<run-id>.json` + `.md` → `wf finalize --status completed`
 
-## Context Pack Loading (Per-Phase Minimum)
-
-At each phase start, load only:
-
-1. Latest phase summary from the previous phase
-2. Open risks and unresolved decisions (from `retrieval-index.json` entries tagged `risk` or `decision`)
-3. Current task scope (from `task-state.json`)
-4. Profile gate rules (from `configs/profiles/<profile>.json`)
-
-Use `src/memory/retrieval.ts → queryIndex()` behavior: filter by phase + active status, rank by relevance_score, fill up to `preload_token_budget` (8,000 tokens default). Always prepend mandatory context (risks + decisions) up to `mandatory_context_token_limit` (2,000 tokens).
-
----
-
-## Rollback Reference
-
-Rollback is triggered by:
-- `orchestrator.ts checkpoint --approved false`
-- Direct call to `orchestrator.ts rollback --reason "<text>"`
-
-What rollback does:
-1. Sets `status = rollback_pending`
-2. Finds most recent snapshot in `<run-dir>/snapshots/<phase>/`
-3. Restores snapshot files to run directory
-4. Sets `status = blocked`, writes `rollback_metadata` to `run-state.json`
-5. Writes `rollback-report.json` with reason, failed step, and required action
-
-After rollback, the run is `blocked`. Human must review the rollback report and either:
-- Fix the issue and re-run the failed phase from the restored state
-- Abandon the run and start fresh with `/workflow start`
+**`/workflow weekly-synthesis`** — Aggregate `eval/retro-*.json` files → write `eval/weekly-synthesis-<date>.json` + `.md`
